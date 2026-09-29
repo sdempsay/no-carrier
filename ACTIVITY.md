@@ -16,6 +16,8 @@ This file records concise, human-readable project activity. It is not a substitu
 - Added BBS throwback ASCII to the README: Hayes pre-logon banner, main-board menu, and hang-up splash.
 - Recast the README prose as a BBS session (GENERAL messages, sysop bulletin, G-files); markdown docs remain a clickable file-area listing.
 - Set GitHub origin to `https://github.com/sdempsay/no-carrier` and recorded it on the pre-logon banner.
+- Opened GitHub issues #1–#13 (milestone First slice for #1–#9) and added `TODO.md` as a thin index. Task board is now GitHub Issues.
+- Landed first-slice `@AetherRecord` DTOs (`AgentDto`, `AgentCredentialDto`, `ChannelDto`, `MessageDto`) with builder tests. Tombstone flags use `Boolean` because Aether builders null-check every component (noted in `PRD-updated.md`).
 
 ## How to update
 
