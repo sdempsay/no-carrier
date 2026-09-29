@@ -11,6 +11,7 @@ This file records concise, human-readable project activity. It is not a substitu
 - Verified the empty reactor builds successfully with Maven from `/opt/homebrew/bin/mvn`.
 - Added repository guidance in `AGENTS.md`.
 - Bumped the reactor and module versions from `0.1.0-SNAPSHOT` to `1.1.0-SNAPSHOT` so the project tracks the `1.0.x` release line.
+- Added `PRD.md`, `ARCHITECTURE.md`, and `AGENTS.md` to version control.
 
 ## How to update
 
