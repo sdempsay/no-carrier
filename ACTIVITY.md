@@ -19,6 +19,7 @@ This file records concise, human-readable project activity. It is not a substitu
 - Opened GitHub issues #1–#13 (milestone First slice for #1–#9) and added `TODO.md` as a thin index. Task board is now GitHub Issues.
 - Landed first-slice `@AetherRecord` DTOs (`AgentDto`, `AgentCredentialDto`, `ChannelDto`, `MessageDto`) with builder tests. Tombstone flags use `Boolean` because Aether builders null-check every component (noted in `PRD-updated.md`).
 - Wired first-slice Aether stores: `@AetherStoreProviders` in `store.memory` and `store.fs` (`scr = false`). AgentDto round-trips in memory and on a temp filesystem root, including a new store instance on the same root.
+- Added `CredentialHashPort` and JDK `Pbkdf2CredentialHasher` (PBKDF2-HMAC-SHA-256, injectable iterations, constant-time compare). Encoded form is `pbkdf2-sha256/<iterations>/<url-safe-salt>/<url-safe-dk>`.
 
 ## How to update
 

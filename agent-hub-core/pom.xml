@@ -12,10 +12,18 @@
   <artifactId>agent-hub-core</artifactId>
   <packaging>jar</packaging>
 
+  <properties>
+    <felix.bundle.exportcontents>org.dempsay.agenthub.core,org.dempsay.agenthub.core.*</felix.bundle.exportcontents>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>org.dempsay.agenthub</groupId>
       <artifactId>agent-hub-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.dempsay.utils</groupId>
+      <artifactId>exceptional</artifactId>
     </dependency>
   </dependencies>
 </project>
