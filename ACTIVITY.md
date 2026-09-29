@@ -14,6 +14,7 @@ This file records concise, human-readable project activity. It is not a substitu
 - Added `PRD.md`, `ARCHITECTURE.md`, and `AGENTS.md` to version control.
 - Wrote `README.md` under the product name **no-carrier** (Maven coordinates unchanged) and recorded the name in `PRD-updated.md`.
 - Added BBS throwback ASCII to the README: Hayes pre-logon banner, main-board menu, and hang-up splash.
+- Recast the README prose as a BBS session (GENERAL messages, sysop bulletin, G-files); markdown docs remain a clickable file-area listing.
 
 ## How to update
 
