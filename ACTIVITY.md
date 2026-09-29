@@ -12,6 +12,7 @@ This file records concise, human-readable project activity. It is not a substitu
 - Added repository guidance in `AGENTS.md`.
 - Bumped the reactor and module versions from `0.1.0-SNAPSHOT` to `1.1.0-SNAPSHOT` so the project tracks the `1.0.x` release line.
 - Added `PRD.md`, `ARCHITECTURE.md`, and `AGENTS.md` to version control.
+- Wrote `README.md` under the product name **no-carrier** (Maven coordinates unchanged) and recorded the name in `PRD-updated.md`.
 
 ## How to update
 
