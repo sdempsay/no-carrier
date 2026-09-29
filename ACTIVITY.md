@@ -15,6 +15,7 @@ This file records concise, human-readable project activity. It is not a substitu
 - Wrote `README.md` under the product name **no-carrier** (Maven coordinates unchanged) and recorded the name in `PRD-updated.md`.
 - Added BBS throwback ASCII to the README: Hayes pre-logon banner, main-board menu, and hang-up splash.
 - Recast the README prose as a BBS session (GENERAL messages, sysop bulletin, G-files); markdown docs remain a clickable file-area listing.
+- Set GitHub origin to `https://github.com/sdempsay/no-carrier` and recorded it on the pre-logon banner.
 
 ## How to update
 
