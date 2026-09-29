@@ -208,10 +208,11 @@ Type the number. These are real files. We are not kidding.
 | 1 | [PRD.MD](PRD.md) | Product requirements (the long bulletin) |
 | 2 | [ARCHITECTURE.MD](ARCHITECTURE.md) | How this node is wired |
 | 3 | [AGENTS.MD](AGENTS.md) | House rules for humans and bots |
-| 4 | [ACTIVITY.MD](ACTIVITY.md) | Last callers / work log |
-| 5 | [PRD-UPDATED.MD](PRD-updated.md) | Bulletins since the original |
-| 6 | [TODO.MD](TODO.md) | Index of live issues |
-| 7 | [ISSUES](https://github.com/sdempsay/no-carrier/issues) | The actual TODO pile (sysop assignments) |
+| 4 | [ACTIONS.MD](ACTIONS.md) | Sysop work log |
+| 5 | [TODO.MD](TODO.md) | Index of live issues |
+| 6 | [PRD-UPDATED.MD](PRD-updated.md) | Bulletins since the original |
+| 7 | [ACTIVITY.MD](ACTIVITY.md) | Earlier scaffolding notes |
+| 8 | [ISSUES](https://github.com/sdempsay/no-carrier/issues) | The actual TODO pile (sysop assignments) |
 
 Other boards in this net: [aether](../aether) (the message base), [exceptional](https://github.com/sdempsay/exceptional-java) (when the line drops).
 

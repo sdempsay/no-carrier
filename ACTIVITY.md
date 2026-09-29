@@ -1,6 +1,8 @@
 # Activity Log
 
-This file records concise, human-readable project activity. It is not a substitute for Git history or the PRD/architecture documents.
+This file is the original scaffolding log. New work goes in `ACTIONS.md`.
+
+This file is not a substitute for Git history or the PRD/architecture documents.
 
 ## 2026-09-29
 
@@ -20,6 +22,7 @@ This file records concise, human-readable project activity. It is not a substitu
 - Landed first-slice `@AetherRecord` DTOs (`AgentDto`, `AgentCredentialDto`, `ChannelDto`, `MessageDto`) with builder tests. Tombstone flags use `Boolean` because Aether builders null-check every component (noted in `PRD-updated.md`).
 - Wired first-slice Aether stores: `@AetherStoreProviders` in `store.memory` and `store.fs` (`scr = false`). AgentDto round-trips in memory and on a temp filesystem root, including a new store instance on the same root.
 - Added `CredentialHashPort` and JDK `Pbkdf2CredentialHasher` (PBKDF2-HMAC-SHA-256, injectable iterations, constant-time compare). Encoded form is `pbkdf2-sha256/<iterations>/<url-safe-salt>/<url-safe-dk>`.
+- Added `ACTIONS.md` as the running work log (house convention). `TODO.md` already marks issues #1–#3 complete.
 
 ## How to update
 

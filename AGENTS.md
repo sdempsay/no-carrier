@@ -23,7 +23,7 @@ Agent Hub is a local, authenticated coordination hub for human and automated age
 ## Repository workflow
 
 1. Read `PRD.md`, `ARCHITECTURE.md`, and this file before making structural changes.
-2. Read `ACTIVITY.md` before starting work and append a concise entry after meaningful changes.
+2. Read `ACTIONS.md` before starting work and append a concise entry after meaningful changes. Keep `TODO.md` in sync with GitHub issue status.
 3. The task board is **GitHub Issues** on [`sdempsay/no-carrier`](https://github.com/sdempsay/no-carrier/issues). `TODO.md` is a thin index (id, status, link). Details live on the issue. Close work with `Fixes #N` in the commit.
 4. Use `gh` for this repository (GitHub origin). Use the local Maven installation at `/opt/homebrew/bin/mvn` when `mvn` is not on `PATH`.
 5. Prefer Java 21 for builds and verify the active Java version before relying on newer language or API features.
