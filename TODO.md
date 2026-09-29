@@ -9,7 +9,7 @@ Milestone: [First slice](https://github.com/sdempsay/no-carrier/milestone/1) —
 | ID | Task | Status | Issue |
 |----|------|--------|-------|
 | 1 | API: first-slice Aether DTOs (agent, credential, channel, message) | complete | [#1](https://github.com/sdempsay/no-carrier/issues/1) |
-| 2 | Store: memory and filesystem provider wiring | pending | [#2](https://github.com/sdempsay/no-carrier/issues/2) |
+| 2 | Store: memory and filesystem provider wiring | complete | [#2](https://github.com/sdempsay/no-carrier/issues/2) |
 | 3 | Core: PBKDF2 credential hashing port | pending | [#3](https://github.com/sdempsay/no-carrier/issues/3) |
 | 4 | Core: agent registry and credential lifecycle | pending | [#4](https://github.com/sdempsay/no-carrier/issues/4) |
 | 5 | Core: public channels, messages, cursors, tombstones | pending | [#5](https://github.com/sdempsay/no-carrier/issues/5) |

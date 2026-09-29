@@ -67,6 +67,11 @@
         <version>${aether.version}</version>
       </dependency>
       <dependency>
+        <groupId>org.dempsay.aether</groupId>
+        <artifactId>aether-store-gen</artifactId>
+        <version>${aether.version}</version>
+      </dependency>
+      <dependency>
         <groupId>org.dempsay.utils</groupId>
         <artifactId>exceptional</artifactId>
         <version>${exceptional.version}</version>

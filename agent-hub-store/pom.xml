@@ -12,10 +12,18 @@
   <artifactId>agent-hub-store</artifactId>
   <packaging>jar</packaging>
 
+  <properties>
+    <felix.bundle.exportcontents>org.dempsay.agenthub.store,org.dempsay.agenthub.store.*</felix.bundle.exportcontents>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>org.dempsay.agenthub</groupId>
       <artifactId>agent-hub-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.dempsay.aether</groupId>
+      <artifactId>aether-api</artifactId>
     </dependency>
     <dependency>
       <groupId>org.dempsay.aether</groupId>
@@ -25,5 +33,47 @@
       <groupId>org.dempsay.aether</groupId>
       <artifactId>aether-store-fs</artifactId>
     </dependency>
+    <dependency>
+      <groupId>org.dempsay.aether</groupId>
+      <artifactId>aether-store-gen</artifactId>
+      <optional>true</optional>
+    </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>org.dempsay.aether</groupId>
+              <artifactId>aether-store-gen</artifactId>
+              <version>${aether.version}</version>
+            </path>
+            <path>
+              <groupId>org.dempsay.aether</groupId>
+              <artifactId>aether-api</artifactId>
+              <version>${aether.version}</version>
+            </path>
+            <path>
+              <groupId>org.dempsay.utils</groupId>
+              <artifactId>exceptional</artifactId>
+              <version>${exceptional.version}</version>
+            </path>
+            <path>
+              <groupId>org.freemarker</groupId>
+              <artifactId>freemarker</artifactId>
+              <version>${freemarker.version}</version>
+            </path>
+            <path>
+              <groupId>org.dempsay.support.jsr269</groupId>
+              <artifactId>jsr269-utilities</artifactId>
+              <version>${jsr269-utilities.version}</version>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>

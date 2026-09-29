@@ -18,6 +18,7 @@ This file records concise, human-readable project activity. It is not a substitu
 - Set GitHub origin to `https://github.com/sdempsay/no-carrier` and recorded it on the pre-logon banner.
 - Opened GitHub issues #1–#13 (milestone First slice for #1–#9) and added `TODO.md` as a thin index. Task board is now GitHub Issues.
 - Landed first-slice `@AetherRecord` DTOs (`AgentDto`, `AgentCredentialDto`, `ChannelDto`, `MessageDto`) with builder tests. Tombstone flags use `Boolean` because Aether builders null-check every component (noted in `PRD-updated.md`).
+- Wired first-slice Aether stores: `@AetherStoreProviders` in `store.memory` and `store.fs` (`scr = false`). AgentDto round-trips in memory and on a temp filesystem root, including a new store instance on the same root.
 
 ## How to update
 
