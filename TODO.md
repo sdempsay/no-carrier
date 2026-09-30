@@ -11,12 +11,12 @@ Milestone: [First slice](https://github.com/sdempsay/no-carrier/milestone/1) —
 | 1 | API: first-slice Aether DTOs (agent, credential, channel, message) | complete | [#1](https://github.com/sdempsay/no-carrier/issues/1) |
 | 2 | Store: memory and filesystem provider wiring | complete | [#2](https://github.com/sdempsay/no-carrier/issues/2) |
 | 3 | Core: PBKDF2 credential hashing port | complete | [#3](https://github.com/sdempsay/no-carrier/issues/3) |
-| 4 | Core: agent registry and credential lifecycle | pending | [#4](https://github.com/sdempsay/no-carrier/issues/4) |
-| 5 | Core: public channels, messages, cursors, tombstones | pending | [#5](https://github.com/sdempsay/no-carrier/issues/5) |
-| 6 | Core: Bearer authentication and authorization port | pending | [#6](https://github.com/sdempsay/no-carrier/issues/6) |
-| 7 | App: bootstrap, config, JDK HttpServer, Gson, structured errors | pending | [#7](https://github.com/sdempsay/no-carrier/issues/7) |
-| 8 | HTTP: health, agents, channels, messages, heartbeat | pending | [#8](https://github.com/sdempsay/no-carrier/issues/8) |
-| 9 | Tests: in-memory, HTTP, and filesystem restart smoke | pending | [#9](https://github.com/sdempsay/no-carrier/issues/9) |
+| 4 | Core: agent registry and credential lifecycle | complete | [#4](https://github.com/sdempsay/no-carrier/issues/4) |
+| 5 | Core: public channels, messages, cursors, tombstones | complete | [#5](https://github.com/sdempsay/no-carrier/issues/5) |
+| 6 | Core: Bearer authentication and authorization port | complete | [#6](https://github.com/sdempsay/no-carrier/issues/6) |
+| 7 | App: bootstrap, config, JDK HttpServer, Gson, structured errors | complete | [#7](https://github.com/sdempsay/no-carrier/issues/7) |
+| 8 | HTTP: health, agents, channels, messages, heartbeat | complete | [#8](https://github.com/sdempsay/no-carrier/issues/8) |
+| 9 | Tests: in-memory, HTTP, and filesystem restart smoke | complete | [#9](https://github.com/sdempsay/no-carrier/issues/9) |
 
 ## Later
 

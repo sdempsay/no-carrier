@@ -32,6 +32,7 @@
     <freemarker.version>2.3.34</freemarker.version>
     <gson.version>2.11.0</gson.version>
     <jsr269-utilities.version>1.0.1</jsr269-utilities.version>
+    <junit.version>5.10.0</junit.version>
   </properties>
 
   <dependencyManagement>
@@ -80,6 +81,12 @@
         <groupId>com.google.code.gson</groupId>
         <artifactId>gson</artifactId>
         <version>${gson.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>${junit.version}</version>
+        <scope>test</scope>
       </dependency>
     </dependencies>
   </dependencyManagement>
