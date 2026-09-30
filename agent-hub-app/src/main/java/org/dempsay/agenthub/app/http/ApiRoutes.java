@@ -4,6 +4,7 @@ import com.google.gson.JsonParseException;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -14,6 +15,7 @@ import org.dempsay.agenthub.api.model.AgentCredentialDto;
 import org.dempsay.agenthub.api.model.AgentDto;
 import org.dempsay.agenthub.api.model.ChannelDto;
 import org.dempsay.agenthub.api.model.MessageDto;
+import org.dempsay.agenthub.app.ChannelWakeups;
 import org.dempsay.agenthub.app.HubServices;
 import org.dempsay.agenthub.app.http.dto.ApiAgentDto;
 import org.dempsay.agenthub.app.http.dto.ApiChannelDto;
@@ -21,7 +23,10 @@ import org.dempsay.agenthub.app.http.dto.ApiMessageDto;
 import org.dempsay.agenthub.app.http.dto.CreateAgentRequest;
 import org.dempsay.agenthub.app.http.dto.CreateChannelRequest;
 import org.dempsay.agenthub.app.http.dto.CreateMessageRequest;
+import org.dempsay.agenthub.app.http.dto.UpdateStatusRequest;
+import org.dempsay.aether.api.store.AetherPersisted;
 import org.dempsay.agenthub.core.port.AuthPrincipal;
+import org.dempsay.agenthub.core.service.MessageCursor;
 
 /**
  * HTTP route handlers for the Agent Hub API.
@@ -34,22 +39,36 @@ public final class ApiRoutes {
     private static final String AGENT = "agent";
     private static final int MAX_LIMIT = 100;
 
+    private static final String PUBLIC_VISIBILITY = "public";
+
+    private static final List<String> DECLARED_STATUSES = List.of("online", "busy", "away", "offline");
+
+    private static final int MAX_WAIT_SECONDS = 60;
+
+    private static final String CONSOLE_RESOURCE = "/web/console.html";
+
     private final HttpAdapter http;
     private final HubServices services;
     private final int maxMessageSize;
+    private final ChannelWakeups wakeups;
 
-    public ApiRoutes(final HttpAdapter http, final HubServices services, final int maxMessageSize) {
+    public ApiRoutes(final HttpAdapter http, final HubServices services, final int maxMessageSize,
+            final ChannelWakeups wakeups) {
         this.http = http;
         this.services = services;
         this.maxMessageSize = maxMessageSize;
+        this.wakeups = wakeups;
     }
 
     public void register() {
         http.get("/health", context -> sendJson(context, 200, Map.of("status", "UP", "ready", true)));
+        http.get("/index.html", this::handleConsole);
+        http.get("/", this::handleConsole);
 
         http.get("/api/v1/agents", this::handleListAgents);
         http.post("/api/v1/agents", this::handleCreateAgent);
         http.post("/api/v1/agents/{" + AGENT + "}/heartbeat", this::handleHeartbeat);
+        http.put("/api/v1/agents/{" + AGENT + "}/status", this::handleUpdateStatus);
 
         http.get("/api/v1/channels", this::handleListChannels);
         http.post("/api/v1/channels", this::handleCreateChannel);
@@ -57,6 +76,30 @@ public final class ApiRoutes {
 
         http.get("/api/v1/channels/{" + CHANNEL + "}/messages", this::handleListMessages);
         http.post("/api/v1/channels/{" + CHANNEL + "}/messages", this::handleCreateMessage);
+    }
+
+    /**
+     * Serves the human console. No authentication is required to fetch the shell; the page
+     * asks for an API key and keeps it in the browser, so the HTML itself contains no secrets.
+     */
+    private void handleConsole(final HttpAdapter.RequestContext context) throws IOException {
+        try (final var in = ApiRoutes.class.getResourceAsStream(CONSOLE_RESOURCE)) {
+            if (in == null) {
+                notFound(context, "Console not packaged in this build");
+                return;
+            }
+            final var html = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            final var bytes = html.getBytes(StandardCharsets.UTF_8);
+            final var headers = context.exchange().getResponseHeaders();
+            headers.set("Content-Type", "text/html; charset=utf-8");
+            headers.set("Cache-Control", "no-store");
+            // The console holds a credential in browser storage; keep it out of shared caches.
+            headers.set("Referrer-Policy", "no-referrer");
+            context.exchange().sendResponseHeaders(200, bytes.length);
+            try (final var out = context.exchange().getResponseBody()) {
+                out.write(bytes);
+            }
+        }
     }
 
     private void handleListAgents(final HttpAdapter.RequestContext context) throws IOException {
@@ -161,6 +204,56 @@ public final class ApiRoutes {
         sendJson(context, 200, toApiAgent(updated.response()));
     }
 
+    /**
+     * Declares the caller's own status. Unlike a heartbeat, this never touches {@code lastSeenAt},
+     * so an agent can report that it is busy without appearing recently active.
+     */
+    private void handleUpdateStatus(final HttpAdapter.RequestContext context) throws IOException {
+        final var principal = authenticate(context);
+        if (principal == null) {
+            return;
+        }
+
+        final var raw = context.pathVariables().get(AGENT);
+        if (!HttpAdapter.isUuid(raw)) {
+            notFound(context, "Agent not found");
+            return;
+        }
+        final var agentId = UUID.fromString(raw);
+
+        if (!services.authorization().canUpdateOwnStatus(principal, agentId) && !principal.isAdmin()) {
+            forbidden(context, "Cannot change the status of another agent");
+            return;
+        }
+
+        final var existing = services.agents().get(agentId);
+        if (existing.wasError()) {
+            notFound(context, "Agent not found");
+            return;
+        }
+
+        final var request = readBody(context, UpdateStatusRequest.class);
+        if (request == null || isBlank(request.declaredStatus())) {
+            validationFailed(context,
+                    List.of(new ErrorResponse.Violation("declaredStatus", "declaredStatus is required")));
+            return;
+        }
+        if (!DECLARED_STATUSES.contains(request.declaredStatus())) {
+            validationFailed(context, List.of(new ErrorResponse.Violation("declaredStatus",
+                    "declaredStatus must be one of " + String.join(", ", DECLARED_STATUSES))));
+            return;
+        }
+
+        final var updated = services.agents().updateStatus(agentId, request.declaredStatus(),
+                existing.response().resource().lastSeenAt());
+        if (updated.wasError()) {
+            serverError(context, "Failed to update status");
+            return;
+        }
+
+        sendJson(context, 200, toApiAgent(updated.response()));
+    }
+
     private void handleListChannels(final HttpAdapter.RequestContext context) throws IOException {
         final var principal = authenticate(context);
         if (principal == null) {
@@ -223,7 +316,7 @@ public final class ApiRoutes {
             notFound(context, "Channel not found");
             return;
         }
-        if (!"public".equals(channel.resource().visibility()) && !principal.isAdmin()) {
+        if (!canAccessChannel(principal, channel)) {
             forbidden(context, "Private channel access denied");
             return;
         }
@@ -242,7 +335,7 @@ public final class ApiRoutes {
             notFound(context, "Channel not found");
             return;
         }
-        if (!"public".equals(channel.resource().visibility()) && !principal.isAdmin()) {
+        if (!canAccessChannel(principal, channel)) {
             forbidden(context, "Private channel access denied");
             return;
         }
@@ -254,14 +347,55 @@ public final class ApiRoutes {
             return;
         }
 
-        final var result = services.messages().list(channel.metadata().id(), limit, param(context, "before"),
-                param(context, "after"));
-        if (result.wasError()) {
+        final String before = param(context, "before");
+        final String after = param(context, "after");
+        for (final var entry : new String[][] { { "before", before }, { "after", after } }) {
+            try {
+                MessageCursor.decodeOptional(entry[1]);
+            } catch (final IllegalArgumentException e) {
+                validationFailed(context, List.of(new ErrorResponse.Violation(entry[0], e.getMessage())));
+                return;
+            }
+        }
+
+        final var channelId = channel.metadata().id();
+
+        // Sample the wake-up epoch before the first read so a post that lands during the read
+        // is never missed between checking and waiting.
+        final var waitSeconds = intParam(context, "wait", 0);
+        if (waitSeconds < 0 || waitSeconds > MAX_WAIT_SECONDS) {
+            validationFailed(context,
+                    List.of(new ErrorResponse.Violation("wait", "wait must be between 0 and " + MAX_WAIT_SECONDS)));
+            return;
+        }
+        final var epoch = wakeups.epoch(channelId);
+
+        var batch = listMessages(channelId, limit, before, after);
+        if (batch == null) {
             serverError(context, "Failed to list messages");
             return;
         }
 
-        sendJson(context, 200, result.response().stream().map(ApiRoutes::toApiMessage).collect(Collectors.toList()));
+        if (batch.isEmpty() && waitSeconds > 0) {
+            try {
+                wakeups.awaitChange(channelId, epoch, Duration.ofSeconds(waitSeconds));
+            } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            batch = listMessages(channelId, limit, before, after);
+            if (batch == null) {
+                serverError(context, "Failed to list messages");
+                return;
+            }
+        }
+
+        sendJson(context, 200, batch.stream().map(ApiRoutes::toApiMessage).collect(Collectors.toList()));
+    }
+
+    private List<AetherPersisted<MessageDto>> listMessages(final String channelId, final int limit,
+            final String before, final String after) {
+        final var result = services.messages().list(channelId, limit, before, after);
+        return result.wasError() ? null : result.response();
     }
 
     private void handleCreateMessage(final HttpAdapter.RequestContext context) throws IOException {
@@ -275,8 +409,7 @@ public final class ApiRoutes {
             notFound(context, "Channel not found");
             return;
         }
-        if (!"public".equals(channel.resource().visibility())
-                && !services.authorization().canPostToPublicChannel(principal, channel.metadata().id())) {
+        if (!canPostToChannel(principal, channel)) {
             forbidden(context, "Posting to this channel is not allowed");
             return;
         }
@@ -323,6 +456,23 @@ public final class ApiRoutes {
         }
         final var bySlug = services.channels().getBySlug(idOrSlug);
         return bySlug.wasError() ? null : bySlug.response();
+    }
+
+    /**
+     * Delegates channel visibility to {@link org.dempsay.agenthub.core.port.AuthorizationPort} so that
+     * read and write decisions can never diverge.
+     */
+    private boolean canAccessChannel(final AuthPrincipal principal,
+            final org.dempsay.aether.api.store.AetherPersisted<ChannelDto> channel) {
+        return services.authorization().canAccessChannel(principal, channel.metadata().id(),
+                PUBLIC_VISIBILITY.equals(channel.resource().visibility()));
+    }
+
+    /** Delegates channel write access to the authorization port; private channels stay admin-only. */
+    private boolean canPostToChannel(final AuthPrincipal principal,
+            final org.dempsay.aether.api.store.AetherPersisted<ChannelDto> channel) {
+        return services.authorization().canPostToChannel(principal, channel.metadata().id(),
+                PUBLIC_VISIBILITY.equals(channel.resource().visibility()));
     }
 
     /**
@@ -399,7 +549,7 @@ public final class ApiRoutes {
 
     private void sendJson(final HttpAdapter.RequestContext context, final int status, final Object body)
             throws IOException {
-        http.sendSuccess(context.exchange(), status, http.gson().toJson(body));
+        http.sendSuccess(context, status, http.gson().toJson(body));
     }
 
     private void sendError(final HttpAdapter.RequestContext context, final int status, final String code,
@@ -481,6 +631,7 @@ public final class ApiRoutes {
                 metadata.updatedAt().toString(),
                 Boolean.TRUE.equals(message.deleted()),
                 message.deletedAt(),
-                message.deletedByAgentId() == null ? null : UUID.fromString(message.deletedByAgentId()));
+                message.deletedByAgentId() == null ? null : UUID.fromString(message.deletedByAgentId()),
+                MessageCursor.of(metadata.createdAt(), metadata.id()).encode());
     }
 }

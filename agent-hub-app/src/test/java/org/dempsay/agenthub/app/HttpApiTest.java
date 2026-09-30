@@ -2,12 +2,14 @@ package org.dempsay.agenthub.app;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.net.URI;
+import java.util.concurrent.CountDownLatch;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -297,6 +299,328 @@ class HttpApiTest {
         final var listed = get("/api/v1/channels", agentKey, null);
         assertEquals(200, listed.statusCode());
         assertEquals(0, array(listed).size());
+    }
+
+    @Test
+    void privateChannelRejectsBothReadsAndWritesFromAgents() throws Exception {
+        final var created = post("/api/v1/channels",
+                "{\"slug\":\"backroom\",\"name\":\"Backroom\",\"visibility\":\"private\"}", adminKey);
+        assertEquals(201, created.statusCode());
+        final var id = json(created).get("id").getAsString();
+        final var agentKey = registerAgent("nosy");
+
+        final var read = get("/api/v1/channels/" + id + "/messages", agentKey, null);
+        assertEquals(403, read.statusCode(), "agents must not read private channel messages");
+        assertEquals("FORBIDDEN", json(read).get("code").getAsString());
+
+        final var write = post("/api/v1/channels/" + id + "/messages",
+                "{\"body\":\"let me in\"}", agentKey);
+        assertEquals(403, write.statusCode(), "agents must not post to private channels");
+        assertEquals("FORBIDDEN", json(write).get("code").getAsString());
+
+        final var adminWrite = post("/api/v1/channels/" + id + "/messages",
+                "{\"body\":\"admins only\"}", adminKey);
+        assertEquals(201, adminWrite.statusCode(), adminWrite.body());
+    }
+
+    @Test
+    void privateChannelRejectsWritesEvenBySlug() throws Exception {
+        assertEquals(201, post("/api/v1/channels",
+                "{\"slug\":\"backroom\",\"name\":\"Backroom\",\"visibility\":\"private\"}", adminKey).statusCode());
+        final var agentKey = registerAgent("slugger");
+
+        assertEquals(403, get("/api/v1/channels/backroom/messages", agentKey, null).statusCode());
+        assertEquals(403, post("/api/v1/channels/backroom/messages",
+                "{\"body\":\"bypassing the id\"}", agentKey).statusCode());
+    }
+
+    @Test
+    void publicChannelStillAcceptsAgentReadsAndWrites() throws Exception {
+        createChannel("general");
+        final var agentKey = registerAgent("talker");
+
+        assertEquals(201, post("/api/v1/channels/general/messages",
+                "{\"body\":\"hello room\"}", agentKey).statusCode());
+        final var listed = get("/api/v1/channels/general/messages", agentKey, null);
+        assertEquals(200, listed.statusCode());
+        assertEquals(1, array(listed).size());
+    }
+
+    @Test
+    void messagesExposeOpaqueCursorsThatRoundTrip() throws Exception {
+        createChannel("general");
+        for (int i = 1; i <= 3; i++) {
+            assertEquals(201, post("/api/v1/channels/general/messages",
+                    "{\"body\":\"line " + i + "\"}", adminKey).statusCode());
+        }
+
+        final var first = array(get("/api/v1/channels/general/messages?limit=2", adminKey, null));
+        assertEquals(2, first.size());
+        final var newestCursor = first.get(0).getAsJsonObject().get("cursor").getAsString();
+        final var oldestCursor = first.get(1).getAsJsonObject().get("cursor").getAsString();
+        assertNotEquals(newestCursor, oldestCursor);
+
+        // Strictly older than the newest message: line 2 and line 1, newest first.
+        final var older = array(get("/api/v1/channels/general/messages?before=" + urlEncode(newestCursor),
+                adminKey, null));
+        assertEquals(2, older.size());
+        assertEquals("line 2", older.get(0).getAsJsonObject().get("body").getAsString());
+        assertEquals("line 1", older.get(1).getAsJsonObject().get("body").getAsString());
+
+        // Resuming from the oldest cursor of page one yields only what came after it.
+        final var backToFirst = array(get(
+                "/api/v1/channels/general/messages?after=" + urlEncode(older.get(older.size() - 1)
+                        .getAsJsonObject().get("cursor").getAsString()),
+                adminKey, null));
+        assertEquals(2, backToFirst.size());
+
+        final var newer = array(get("/api/v1/channels/general/messages?after=" + urlEncode(oldestCursor),
+                adminKey, null));
+        assertEquals(1, newer.size());
+        assertEquals("line 3", newer.get(0).getAsJsonObject().get("body").getAsString());
+    }
+
+    @Test
+    void malformedCursorIsRejectedAsAValidationError() throws Exception {
+        createChannel("general");
+
+        final var notBase64 = get("/api/v1/channels/general/messages?before=not-a-cursor", adminKey, null);
+        assertEquals(422, notBase64.statusCode());
+        assertEquals("VALIDATION_FAILED", json(notBase64).get("code").getAsString());
+
+        // Decodes as base64 but is not a cursor.
+        final var validBase64 = get("/api/v1/channels/general/messages?before=bm90LWEtY3Vyc29y",
+                adminKey, null);
+        assertEquals(422, validBase64.statusCode(), "a decodable but non-cursor token must still fail");
+
+        // The old timestamp format must not be silently accepted.
+        final var legacyIso = get("/api/v1/channels/general/messages?before=2026-01-01T00%3A00%3A00Z",
+                adminKey, null);
+        assertEquals(422, legacyIso.statusCode(), "raw timestamps are no longer accepted as cursors");
+    }
+
+    @Test
+    void consoleIsServedWithoutAKey() throws Exception {
+        final var root = get("/", null, null);
+        assertEquals(200, root.statusCode());
+        assertTrue(root.headers().firstValue("Content-Type").orElse("").startsWith("text/html"));
+        assertTrue(root.body().contains("no-carrier"), "console should render its own shell");
+        assertTrue(root.body().contains("wait=25"), "console should use the long-poll endpoint");
+        assertTrue(root.headers().firstValue("Cache-Control").orElse("").contains("no-store"));
+
+        final var named = get("/index.html", null, null);
+        assertEquals(200, named.statusCode());
+    }
+
+    @Test
+    void consoleDoesNotBreakSubsequentRequests() throws Exception {
+        assertEquals(200, get("/health", null, null).statusCode());
+        assertEquals(200, get("/", null, null).statusCode());
+
+        final var after = get("/health", null, null);
+        assertEquals(200, after.statusCode(), "server must still answer after serving the console");
+        assertEquals("UP", json(after).get("status").getAsString());
+
+        assertEquals(200, get("/", null, null).statusCode());
+        assertEquals(200, get("/health", null, null).statusCode());
+
+        final var chans = get("/api/v1/channels", adminKey, null);
+        assertEquals(200, chans.statusCode(), "authenticated routes must still work after the console");
+    }
+
+    @Test
+    void consoleShellNeverContainsTheApiKey() throws Exception {
+        final var shell = get("/", null, null).body();
+        assertFalse(shell.contains(adminKey), "the console shell must not embed a credential");
+    }
+
+    @Test
+    void longPollReturnsImmediatelyWhenMessagesAlreadyExist() throws Exception {
+        createChannel("general");
+        assertEquals(201, post("/api/v1/channels/general/messages", "{\"body\":\"already here\"}", adminKey)
+                .statusCode());
+
+        final var started = System.nanoTime();
+        final var response = get("/api/v1/channels/general/messages?wait=20", adminKey, null);
+        final var elapsedMillis = (System.nanoTime() - started) / 1_000_000L;
+
+        assertEquals(200, response.statusCode());
+        assertEquals(1, array(response).size());
+        assertTrue(elapsedMillis < 5_000, "must not wait when messages exist, took " + elapsedMillis + "ms");
+    }
+
+    @Test
+    void longPollWakesAsSoonAsAnotherAgentPosts() throws Exception {
+        createChannel("general");
+        final var agentKey = registerAgent("late");
+
+        final var poster = Thread.ofVirtual().start(() -> {
+            sleepQuietly(300);
+            try {
+                post("/api/v1/channels/general/messages", "{\"body\":\"surprise\"}", agentKey);
+            } catch (final Exception e) {
+                throw new IllegalStateException(e);
+            }
+        });
+
+        final var started = System.nanoTime();
+        final var response = get("/api/v1/channels/general/messages?wait=20", adminKey, null);
+        final var elapsedMillis = (System.nanoTime() - started) / 1_000_000L;
+        poster.join();
+
+        assertEquals(200, response.statusCode());
+        assertEquals(1, array(response).size(), response.body());
+        assertTrue(elapsedMillis < 10_000, "should wake on the post, not the timeout; took " + elapsedMillis + "ms");
+    }
+
+    @Test
+    void longPollTimesOutWithAnEmptyBatch() throws Exception {
+        createChannel("general");
+
+        final var started = System.nanoTime();
+        final var response = get("/api/v1/channels/general/messages?wait=1", adminKey, null);
+        final var elapsedMillis = (System.nanoTime() - started) / 1_000_000L;
+
+        assertEquals(200, response.statusCode());
+        assertEquals(0, array(response).size());
+        assertTrue(elapsedMillis >= 900, "must actually wait for the window, took " + elapsedMillis + "ms");
+    }
+
+    @Test
+    void onePostWakesEveryParkedLongPoll() throws Exception {
+        createChannel("general");
+
+        final var waiters = 3;
+        final var latch = new CountDownLatch(waiters);
+        final var results = new java.util.concurrent.ConcurrentLinkedQueue<String>();
+        final var threads = new java.util.ArrayList<Thread>();
+        for (int i = 0; i < waiters; i++) {
+            final var thread = Thread.ofVirtual().start(() -> {
+                try {
+                    final var response = get("/api/v1/channels/general/messages?wait=20", adminKey, null);
+                    results.add(response.body());
+                } catch (final Exception e) {
+                    results.add("ERROR: " + e);
+                } finally {
+                    latch.countDown();
+                }
+            });
+            threads.add(thread);
+        }
+
+        // Give every waiter time to park before posting once.
+        sleepQuietly(700);
+        assertEquals(201, post("/api/v1/channels/general/messages", "{\"body\":\"broadcast\"}", adminKey)
+                .statusCode());
+
+        assertTrue(latch.await(15, java.util.concurrent.TimeUnit.SECONDS), "all waiters must be released");
+        threads.forEach(t -> {
+            try {
+                t.join();
+            } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+
+        assertEquals(waiters, results.size());
+        for (final var body : results) {
+            assertEquals(1, JsonParser.parseString(body).getAsJsonArray().size(),
+                    "every waiter should observe the single post: " + body);
+        }
+    }
+
+    @Test
+    void longPollRejectsAnAbsurdWaitWindow() throws Exception {
+        createChannel("general");
+
+        assertEquals(422, get("/api/v1/channels/general/messages?wait=900", adminKey, null).statusCode());
+        assertEquals(422, get("/api/v1/channels/general/messages?wait=-5", adminKey, null).statusCode());
+    }
+
+    private static void sleepQuietly(final long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    @Test
+    void agentCanDeclareItsOwnStatus() throws Exception {
+        final var registered = post("/api/v1/agents",
+                "{\"name\":\"signaler\",\"kind\":\"automated\"}", adminKey);
+        final var agent = json(registered).getAsJsonObject("agent");
+        final var agentId = agent.get("id").getAsString();
+        final var agentKey = json(registered).get("apiKey").getAsString();
+
+        final var response = put("/api/v1/agents/" + agentId + "/status",
+                "{\"declaredStatus\":\"busy\"}", agentKey);
+        assertEquals(200, response.statusCode(), response.body());
+        final var updated = json(response);
+        assertEquals("busy", updated.get("declaredStatus").getAsString());
+    }
+
+    @Test
+    void statusRouteRejectsOtherAgentsAndUnknownStatuses() throws Exception {
+        final var registered = post("/api/v1/agents",
+                "{\"name\":\"poker\",\"kind\":\"automated\"}", adminKey);
+        final var agentId = json(registered).getAsJsonObject("agent").get("id").getAsString();
+        final var agentKey = json(registered).get("apiKey").getAsString();
+        final var otherKey = registerAgent("meddler");
+
+        final var notMine = put("/api/v1/agents/" + agentId + "/status",
+                "{\"declaredStatus\":\"online\"}", otherKey);
+        assertEquals(403, notMine.statusCode());
+
+        final var bogus = put("/api/v1/agents/" + agentId + "/status",
+                "{\"declaredStatus\":\"vibing\"}", agentKey);
+        assertEquals(422, bogus.statusCode());
+
+        final var missing = put("/api/v1/agents/" + agentId + "/status", "{}", agentKey);
+        assertEquals(422, missing.statusCode());
+
+        final var adminCan = put("/api/v1/agents/" + agentId + "/status",
+                "{\"declaredStatus\":\"away\"}", adminKey);
+        assertEquals(200, adminCan.statusCode());
+    }
+
+    @Test
+    void statusChangeLeavesLastSeenAtAlone() throws Exception {
+        final var registered = post("/api/v1/agents",
+                "{\"name\":\"quiet\",\"kind\":\"automated\"}", adminKey);
+        final var agentId = json(registered).getAsJsonObject("agent").get("id").getAsString();
+        final var agentKey = json(registered).get("apiKey").getAsString();
+
+        // One heartbeat so lastSeenAt is populated, then capture it.
+        final var seenBefore = json(post("/api/v1/agents/" + agentId + "/heartbeat", null, agentKey))
+                .get("lastSeenAt").getAsString();
+        assertNotNull(seenBefore);
+
+        final var after = json(put("/api/v1/agents/" + agentId + "/status",
+                "{\"declaredStatus\":\"online\"}", agentKey));
+        assertEquals("online", after.get("declaredStatus").getAsString());
+        assertEquals(seenBefore, after.get("lastSeenAt").getAsString(),
+                "declaring a status must not count as a heartbeat");
+
+        final var beat = json(post("/api/v1/agents/" + agentId + "/heartbeat", null, agentKey));
+        assertEquals("online", beat.get("declaredStatus").getAsString(),
+                "heartbeat must preserve the declared status");
+        assertNotEquals(seenBefore, beat.get("lastSeenAt").getAsString(),
+                "a heartbeat must advance lastSeenAt");
+    }
+
+    private HttpResponse<String> put(final String path, final String body, final String key) throws Exception {
+        final var builder = HttpRequest.newBuilder(URI.create(base + path)).timeout(TIMEOUT);
+        builder.header("Content-Type", "application/json");
+        if (key != null) {
+            builder.header("Authorization", "Bearer " + key);
+        }
+        return client.send(builder.PUT(HttpRequest.BodyPublishers.ofString(body)).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private static String urlEncode(final String value) {
+        return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8);
     }
 
     private String registerAgent(final String name) throws Exception {

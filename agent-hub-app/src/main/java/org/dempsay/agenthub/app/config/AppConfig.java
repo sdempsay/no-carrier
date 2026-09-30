@@ -2,6 +2,7 @@ package org.dempsay.agenthub.app.config;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Map;
 
 /**
  * Application configuration.
@@ -70,30 +71,130 @@ public record AppConfig(
                 DEFAULT_HEARTBEAT_TIMEOUT_SECONDS, 1000, false);
     }
 
-    public static AppConfig fromEnvironment(final String[] args) {
-        final var dataDir = resolveDataDir(args);
-        final var bindAddress = System.getenv().getOrDefault("AGENT_HUB_BIND_ADDRESS", LOOPBACK);
-        final var port = Integer.parseInt(System.getenv().getOrDefault("AGENT_HUB_PORT", String.valueOf(DEFAULT_PORT)));
-        final var maxMessageSize = Integer.parseInt(
-                System.getenv().getOrDefault("AGENT_HUB_MAX_MESSAGE_SIZE", String.valueOf(DEFAULT_MAX_MESSAGE_SIZE)));
-        final var heartbeatTimeoutSeconds = Integer.parseInt(
-                System.getenv().getOrDefault("AGENT_HUB_HEARTBEAT_TIMEOUT", String.valueOf(DEFAULT_HEARTBEAT_TIMEOUT_SECONDS)));
-        final var pbkdf2Iterations = Integer.parseInt(
-                System.getenv().getOrDefault("AGENT_HUB_PBKDF2_ITERATIONS", String.valueOf(DEFAULT_PBKDF2_ITERATIONS)));
+    public static final String USAGE = """
+            Usage: java -jar agent-hub-app.jar [options]
+              --data-dir PATH          persistence root (env AGENT_HUB_DATA_DIR)
+              --bind-address ADDR       loopback interface to bind (env AGENT_HUB_BIND_ADDRESS)
+              --port N                 TCP port, 0 for ephemeral (env AGENT_HUB_PORT)
+              --in-memory              do not persist to disk
+              --max-message-size N     maximum message body length (env AGENT_HUB_MAX_MESSAGE_SIZE)
+              --heartbeat-timeout N    expected heartbeat interval (env AGENT_HUB_HEARTBEAT_TIMEOUT)
+              --pbkdf2-iterations N    API key hashing cost (env AGENT_HUB_PBKDF2_ITERATIONS)
+              --help                   show this message
+            """;
 
-        return new AppConfig(dataDir, bindAddress, port, maxMessageSize, heartbeatTimeoutSeconds, pbkdf2Iterations, true);
+    private static final Map<String, String> ENV_BY_OPTION = Map.of(
+            "--data-dir", "AGENT_HUB_DATA_DIR",
+            "--bind-address", "AGENT_HUB_BIND_ADDRESS",
+            "--port", "AGENT_HUB_PORT",
+            "--max-message-size", "AGENT_HUB_MAX_MESSAGE_SIZE",
+            "--heartbeat-timeout", "AGENT_HUB_HEARTBEAT_TIMEOUT",
+            "--pbkdf2-iterations", "AGENT_HUB_PBKDF2_ITERATIONS");
+
+    /**
+     * Builds configuration from command-line arguments, falling back to environment
+     * variables and then to defaults. Arguments take precedence over the environment.
+     *
+     * @param args command-line arguments
+     * @return resolved configuration
+     */
+    public static AppConfig fromEnvironment(final String[] args) {
+        if (hasFlag(args, "--help")) {
+            throw new UsageRequested();
+        }
+        rejectUnknownOptions(args);
+
+        final var persistent = !hasFlag(args, "--in-memory");
+        final var dataDirText = resolveString(args, "--data-dir", null);
+        final var dataDir = persistent
+                ? Paths.get(dataDirText == null ? defaultDataDir() : dataDirText)
+                : null;
+
+        return new AppConfig(
+                dataDir,
+                resolveString(args, "--bind-address", LOOPBACK),
+                resolveInt(args, "--port", DEFAULT_PORT),
+                resolveInt(args, "--max-message-size", DEFAULT_MAX_MESSAGE_SIZE),
+                resolveInt(args, "--heartbeat-timeout", DEFAULT_HEARTBEAT_TIMEOUT_SECONDS),
+                resolveInt(args, "--pbkdf2-iterations", DEFAULT_PBKDF2_ITERATIONS),
+                persistent);
     }
 
-    private static Path resolveDataDir(final String[] args) {
-        for (int i = 0; i < args.length - 1; i++) {
-            if ("--data-dir".equals(args[i])) {
-                return Paths.get(args[i + 1]);
-            }
-        }
+    private static String defaultDataDir() {
         final var envDir = System.getenv("AGENT_HUB_DATA_DIR");
         if (envDir != null && !envDir.isBlank()) {
-            return Paths.get(envDir);
+            return envDir;
         }
-        return Paths.get(System.getProperty("user.home"), ".agent-hub", "data");
+        return Paths.get(System.getProperty("user.home"), ".agent-hub", "data").toString();
+    }
+
+    private static String resolveString(final String[] args, final String option, final String fallback) {
+        final var value = argValue(args, option);
+        if (value != null) {
+            return value;
+        }
+        final var env = System.getenv(ENV_BY_OPTION.get(option));
+        if (env != null && !env.isBlank()) {
+            return env;
+        }
+        return fallback;
+    }
+
+    private static int resolveInt(final String[] args, final String option, final int fallback) {
+        final var text = resolveString(args, option, null);
+        if (text == null) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(text.trim());
+        } catch (final NumberFormatException e) {
+            throw new IllegalArgumentException(option + " expects an integer but got: " + text, e);
+        }
+    }
+
+    private static String argValue(final String[] args, final String option) {
+        for (int i = 0; i < args.length - 1; i++) {
+            if (option.equals(args[i])) {
+                return args[i + 1];
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasFlag(final String[] args, final String flag) {
+        for (final var arg : args) {
+            if (flag.equals(arg)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void rejectUnknownOptions(final String[] args) {
+        for (int i = 0; i < args.length; i++) {
+            final var arg = args[i];
+            if (!arg.startsWith("--")) {
+                throw new IllegalArgumentException("Unexpected argument: " + arg + "\n" + USAGE);
+            }
+            if ("--in-memory".equals(arg) || "--help".equals(arg)) {
+                continue;
+            }
+            if (!ENV_BY_OPTION.containsKey(arg)) {
+                throw new IllegalArgumentException("Unknown option: " + arg + "\n" + USAGE);
+            }
+            if (i + 1 >= args.length || args[i + 1].startsWith("--")) {
+                throw new IllegalArgumentException("Missing value for " + arg + "\n" + USAGE);
+            }
+            i++;
+        }
+    }
+
+    /** Raised when {@code --help} is supplied. */
+    public static final class UsageRequested extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        public UsageRequested() {
+            super(USAGE);
+        }
     }
 }

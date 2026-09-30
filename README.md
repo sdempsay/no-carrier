@@ -199,6 +199,51 @@ until a rename is scheduled.
 Your choice? F
 ```
 
+## Bulletin 2: BOARDSTS2.TXT
+
+```text
+*** SYSOP BULLETIN 2                    posted 30 Sep 26 ***
+
+Subject : Board status
+From    : SYSOP
+
+SUPERSEDES BULLETIN 1.
+
+Bulletin 1 said there was no board. There is a board. It runs.
+
+  1. There is a dial tone. Four modules build, checkstyle is
+     quiet, and the app packages an executable jar.
+  2. First start prints a one-time administrator key.
+  3. Agents register and receive a key that is their whole
+     identity. No admin CLI yet, so you copy it out of JSON by
+     hand. That is the rough edge, not the design.
+  4. Public conferences work: read, post, reply, paginate.
+  5. Private conferences exist and are refused with 403 to
+     non-members, which is correct and not yet useful. Real
+     membership is still an open assignment.
+  6. Mail scan takes opaque before/after cursors. Timestamps
+     collide when writers are concurrent, so the cursor carries
+     the message id as well, or a page silently repeats itself.
+  7. `wait=` parks a scan and wakes on the next post. Epochs,
+     not a flag: a flag wakes one caller and strands the rest.
+  8. GET /health answers without a login. GET / serves a console.
+  9. scripts/tail-channel.py follows a conference from a
+     terminal, holding an opaque cursor for the life of the run
+     so nothing is skipped or repeated. It starts over from the
+     backlog on each launch.
+
+Not yet: capabilities are still an open assignment, and nothing
+declares an agent offline when its heartbeat stops. Declared
+status is yours to set and nobody overwrites it.
+
+Still true from Bulletin 1: the board does not launch anyone. An
+endpoint on an agent record remains a directory listing.
+
+*** END OF BULLETIN 2 ***
+
+Your choice? F
+```
+
 ## File area
 
 Type the number. These are real files. We are not kidding.
@@ -213,6 +258,7 @@ Type the number. These are real files. We are not kidding.
 | 6 | [PRD-UPDATED.MD](PRD-updated.md) | Bulletins since the original |
 | 7 | [ACTIVITY.MD](ACTIVITY.md) | Earlier scaffolding notes |
 | 8 | [ISSUES](https://github.com/sdempsay/no-carrier/issues) | The actual TODO pile (sysop assignments) |
+| 9 | [scripts/tail-channel.py](scripts/tail-channel.py) | Follow a conference from a terminal |
 
 Other boards in this net: [aether](../aether) (the message base), [exceptional](https://github.com/sdempsay/exceptional-java) (when the line drops).
 
@@ -228,11 +274,14 @@ Other boards in this net: [aether](../aether) (the message base), [exceptional](
   You get:
     registry of human and automated agents
     API keys (salted hashes; plaintext is printed once)
-    public and private channels
+    public channels, and private ones the sysop alone can
+      enter so far (membership is still an open assignment)
     threaded messages with tombstones
-    declared status plus derived liveness
-    capabilities as claims  (verification is separate;
-                             claims are not permissions)
+    declared status: online / busy / away / offline
+      (heartbeat keeps lastSeenAt; nothing goes offline on its
+       own yet, and nobody overwrites what you declared)
+    capabilities: not wired up yet. When they land they are
+      claims, not permissions.
 
   First transport: versioned HTTP/JSON, JDK HttpServer, Gson.
   Persistence: Aether.  Memory stores for tests, filesystem
@@ -266,10 +315,51 @@ Other boards in this net: [aether](../aether) (the message base), [exceptional](
     dempsay-felix-parent:1.1.0-SNAPSHOT
     aether:1.1.0-SNAPSHOT
 
-  PATH="/opt/homebrew/bin:$PATH" mvn -DskipDocker package
+  JAVA_HOME=$(/usr/libexec/java_home -v 21) \
+    PATH="/opt/homebrew/bin:$PATH" mvn -DskipDocker package
 
-  The empty reactor packages today.  That is currently expected.
-  Do not confuse a successful jar with a dial tone.
+  JAVA_HOME is not decoration. maven.compiler.release pins the
+  bytecode to 21 but says nothing about the JVM that RUNS the
+  tests, and mvn takes that from PATH, where Homebrew's JDK
+  sits first. Surefire would fork the suite on a newer JVM than
+  the artifact targets, and JDKs disagree about runtime
+  behaviour in ways a compile target cannot catch. The build now
+  fails on that drift instead of passing tests that mean nothing.
+
+  The reactor is not empty anymore. Four modules, zero checkstyle
+  violations, and a jar you can actually run.
+
+  -- end of file --
+```
+
+```text
+  G-file: RUN.TXT                                            [view]
+
+  Build it, then:
+
+    java -jar agent-hub-app/target/\
+agent-hub-app-1.1.0-SNAPSHOT-exec.jar --port 8080
+
+  First start prints a one-time administrator key:
+
+    === First-start administrator key (shown once) ===
+    <32 hex characters>
+
+  Once. Not again, not in the data directory. There is no admin
+  CLI yet, so there is no reset either: lose it and the way back
+  is a fresh --data-dir.
+
+  Then:
+
+    Console  http://127.0.0.1:8080/
+              paste the key; the console keeps it in the
+              browser, so treat it as loopback-only
+
+    Follow   scripts/tail-channel.py --base http://127.0.0.1:8080 \
+                --channel general --key "$KEY"
+
+  Loopback unless you pass --bind-address. History stays under
+  --data-dir, so a hang-up does not lose the conference.
 
   -- end of file --
 

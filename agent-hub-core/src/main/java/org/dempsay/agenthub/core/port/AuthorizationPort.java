@@ -26,14 +26,30 @@ public interface AuthorizationPort {
     boolean canManageChannels(AuthPrincipal principal);
 
     /**
-     * Check if principal can read messages in a public channel.
+     * Check if principal can see a channel and read its messages.
+     *
+     * <p>Admins always pass. Authenticated agents pass for public channels only.
+     * Private channels are admin-only until membership grants land in issue #10.
+     *
+     * @param principal authenticated caller
+     * @param channelId target channel
+     * @param isPublic whether the channel visibility is {@code public}
+     * @return true when the caller may read the channel
      */
-    boolean canReadPublicChannel(AuthPrincipal principal, String channelId);
+    boolean canAccessChannel(AuthPrincipal principal, String channelId, boolean isPublic);
 
     /**
-     * Check if principal can post messages in a public channel.
+     * Check if principal can post messages to a channel.
+     *
+     * <p>Read access and write access are decided by the same rule so that a caller can
+     * never post into a channel it is unable to read.
+     *
+     * @param principal authenticated caller
+     * @param channelId target channel
+     * @param isPublic whether the channel visibility is {@code public}
+     * @return true when the caller may post to the channel
      */
-    boolean canPostToPublicChannel(AuthPrincipal principal, String channelId);
+    boolean canPostToChannel(AuthPrincipal principal, String channelId, boolean isPublic);
 
     /**
      * Check if principal can update their own declared status.

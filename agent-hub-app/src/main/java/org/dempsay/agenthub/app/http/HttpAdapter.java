@@ -18,6 +18,7 @@ import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * HTTP server with path-template routing, request ids, and structured errors.
@@ -31,7 +32,6 @@ import java.util.concurrent.Executors;
 public final class HttpAdapter implements AutoCloseable {
     private static final String REQUEST_ID_HEADER = "X-Request-Id";
     private static final String CONTENT_TYPE_JSON = "application/json";
-    private static final String RESPONDED = "org.dempsay.agenthub.app.http.responded";
 
     private final HttpServer server;
     private final Gson gson;
@@ -44,8 +44,24 @@ public final class HttpAdapter implements AutoCloseable {
      * @param exchange the live exchange
      * @param requestId the echoed or minted request id
      * @param pathVariables values captured from the route template
+     * @param response guard ensuring exactly one response is written for this request
      */
-    public record RequestContext(HttpExchange exchange, String requestId, Map<String, String> pathVariables) {
+    public record RequestContext(HttpExchange exchange, String requestId, Map<String, String> pathVariables,
+            ResponseGuard response) {
+    }
+
+    /**
+     * Claims the single right to write a response for one request.
+     *
+     * <p>{@link HttpExchange} attributes are shared across exchanges on the same
+     * server, so per-request state must never be kept there.
+     */
+    public static final class ResponseGuard {
+        private final AtomicBoolean responded = new AtomicBoolean();
+
+        boolean claim() {
+            return responded.compareAndSet(false, true);
+        }
     }
 
     /**
@@ -70,6 +86,10 @@ public final class HttpAdapter implements AutoCloseable {
 
     public void post(final String template, final RouteHandler handler) {
         add("POST", template, handler);
+    }
+
+    public void put(final String template, final RouteHandler handler) {
+        add("PUT", template, handler);
     }
 
     public void patch(final String template, final RouteHandler handler) {
@@ -98,22 +118,21 @@ public final class HttpAdapter implements AutoCloseable {
     }
 
     /**
-     * Writes a JSON response. A second write for the same exchange is ignored.
+     * Writes a JSON response. A second write for the same request is ignored.
      *
-     * @param exchange target exchange
+     * @param context target request context
      * @param status HTTP status
      * @param body serialized body
      * @throws IOException on transport failure
      */
-    public void sendSuccess(final HttpExchange exchange, final int status, final String body) throws IOException {
+    public void sendSuccess(final RequestContext context, final int status, final String body) throws IOException {
         final var bytes = body.getBytes(StandardCharsets.UTF_8);
-        if (Boolean.TRUE.equals(exchange.getAttribute(RESPONDED))) {
+        if (!context.response().claim()) {
             return;
         }
-        exchange.setAttribute(RESPONDED, Boolean.TRUE);
-        exchange.getResponseHeaders().set("Content-Type", CONTENT_TYPE_JSON);
-        exchange.sendResponseHeaders(status, bytes.length);
-        try (OutputStream os = exchange.getResponseBody()) {
+        context.exchange().getResponseHeaders().set("Content-Type", CONTENT_TYPE_JSON);
+        context.exchange().sendResponseHeaders(status, bytes.length);
+        try (OutputStream os = context.exchange().getResponseBody()) {
             os.write(bytes);
         }
     }
@@ -138,18 +157,22 @@ public final class HttpAdapter implements AutoCloseable {
         public void handle(final HttpExchange exchange) throws IOException {
             final var requestId = extractRequestId(exchange);
             exchange.getResponseHeaders().add(REQUEST_ID_HEADER, requestId);
+            final var response = new ResponseGuard();
 
             try {
                 final var path = exchange.getRequestURI().getPath();
                 final var match = match(exchange.getRequestMethod(), split(path));
                 if (match == null) {
-                    sendError(exchange, 404, "NOT_FOUND", "No handler for " + exchange.getRequestMethod() + " " + path, requestId);
+                    sendError(new RequestContext(exchange, requestId, Map.of(), response), 404, "NOT_FOUND",
+                            "No handler for " + exchange.getRequestMethod() + " " + path, requestId);
                     return;
                 }
 
-                match.route().handler().handle(new RequestContext(exchange, requestId, match.variables()));
+                match.route().handler()
+                        .handle(new RequestContext(exchange, requestId, match.variables(), response));
             } catch (IOException e) {
-                sendError(exchange, 500, "INTERNAL_ERROR", String.valueOf(e.getMessage()), requestId);
+                sendError(new RequestContext(exchange, requestId, Map.of(), response), 500, "INTERNAL_ERROR",
+                        String.valueOf(e.getMessage()), requestId);
             }
         }
 
@@ -209,9 +232,9 @@ public final class HttpAdapter implements AutoCloseable {
         }
     }
 
-    private void sendError(final HttpExchange exchange, final int status, final String code, final String message,
+    private void sendError(final RequestContext context, final int status, final String code, final String message,
             final String requestId) throws IOException {
-        sendSuccess(exchange, status, gson.toJson(ErrorResponse.of(code, message, requestId)));
+        sendSuccess(context, status, gson.toJson(ErrorResponse.of(code, message, requestId)));
     }
 
     private record Route(String method, String[] segments, RouteHandler handler) {

@@ -9,6 +9,7 @@ import org.dempsay.agenthub.core.port.AuthorizationPort;
  * Default hybrid authorization service.
  * - Admins can do everything
  * - Authenticated agents can read/post to public channels
+ * - Private channels are admin-only until membership grants land in issue #10
  * - Agents can update their own status
  *
  * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
@@ -31,13 +32,13 @@ public class AuthorizationService implements AuthorizationPort {
     }
 
     @Override
-    public boolean canReadPublicChannel(final AuthPrincipal principal, final String channelId) {
-        return true; // All authenticated agents can read public channels
+    public boolean canAccessChannel(final AuthPrincipal principal, final String channelId, final boolean isPublic) {
+        return principal.isAdmin() || isPublic;
     }
 
     @Override
-    public boolean canPostToPublicChannel(final AuthPrincipal principal, final String channelId) {
-        return true; // All authenticated agents can post to public channels
+    public boolean canPostToChannel(final AuthPrincipal principal, final String channelId, final boolean isPublic) {
+        return principal.isAdmin() || isPublic;
     }
 
     @Override

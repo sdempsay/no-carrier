@@ -6,14 +6,21 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.LinkedHashSet;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.dempsay.aether.api.access.AetherPrincipal;
+import org.dempsay.aether.api.store.AetherPersisted;
+import org.dempsay.aether.store.memory.InMemoryAetherResourceStore;
 import org.dempsay.agenthub.api.model.AgentCredentialDto;
 import org.dempsay.agenthub.api.model.AgentDto;
 import org.dempsay.agenthub.api.model.ChannelDto;
 import org.dempsay.agenthub.api.model.MessageDto;
+import org.dempsay.agenthub.api.model.MessageDtoStore;
 import org.dempsay.agenthub.core.port.AuthPrincipal;
 import org.dempsay.agenthub.core.port.AgentRegistryPort;
 import org.dempsay.agenthub.core.port.AuthorizationPort;
@@ -27,6 +34,7 @@ import org.dempsay.agenthub.core.service.AuthorizationService;
 import org.dempsay.agenthub.core.service.BearerAuthService;
 import org.dempsay.agenthub.core.service.ChannelService;
 import org.dempsay.agenthub.core.service.CredentialServiceImpl;
+import org.dempsay.agenthub.core.service.MessageCursor;
 import org.dempsay.agenthub.core.service.MessageService;
 import org.dempsay.agenthub.core.service.NoOpNotificationPort;
 import org.dempsay.agenthub.store.hash.Pbkdf2CredentialHasher;
@@ -256,13 +264,89 @@ class CoreServicesInMemoryTest {
         assertEquals("Message 5", firstPage.response().get(0).resource().body());
         assertEquals("Message 4", firstPage.response().get(1).resource().body());
 
-        final var afterOldest = messages.list(channelId, 10, null, firstPage.response().get(1).metadata().createdAt().toString());
+        final var afterOldest = messages.list(channelId, 10, null, cursorOf(firstPage.response().get(1)));
         assertEquals(1, afterOldest.response().size());
         assertEquals("Message 5", afterOldest.response().get(0).resource().body());
 
-        final var beforeNewest = messages.list(channelId, 10, firstPage.response().get(0).metadata().createdAt().toString(), null);
+        final var beforeNewest = messages.list(channelId, 10, cursorOf(firstPage.response().get(0)), null);
         assertEquals(4, beforeNewest.response().size());
         assertEquals("Message 4", beforeNewest.response().get(0).resource().body());
+    }
+
+    @Test
+    void messageCursorIsOpaqueAndRoundTrips() {
+        final var channelId = newChannelId("general");
+        final var authorId = newAgentId(agent("bot"));
+        final var created = messages.create(message(channelId, authorId, "round trip")).response();
+
+        final var encoded = cursorOf(created);
+        assertFalse(encoded.contains(created.metadata().id()), "cursor must not expose the raw id: " + encoded);
+        assertTrue(encoded.contains("-") || encoded.contains("_") || !encoded.isEmpty());
+
+        final var decoded = MessageCursor.decode(encoded);
+        assertEquals(created.metadata().id(), decoded.id());
+        assertEquals(created.metadata().createdAt(), decoded.createdAt());
+    }
+
+    @Test
+    void messageListRejectsMalformedCursor() {
+        final var channelId = newChannelId("general");
+        final var result = messages.list(channelId, 10, "not-a-cursor", null);
+        assertTrue(result.wasError(), "malformed cursors must fail rather than throw");
+    }
+
+    @Test
+    void messageListDoesNotSkipMessagesSharingATimestamp() {
+        // A fixed clock forces every message onto one identical createdAt, which is the
+        // condition a timestamp-only cursor gets wrong.
+        final var sharedInstant = Instant.parse("2026-01-01T00:00:00Z");
+        final var tiedMessages = new MessageService(new FixedClockMessageStore(sharedInstant),
+                new NoOpNotificationPort());
+
+        final var channelId = newChannelId("general");
+        final var authorId = newAgentId(agent("bot"));
+        final var firstPageIds = new LinkedHashSet<String>();
+        for (int i = 0; i < 6; i++) {
+            final var created = tiedMessages.create(
+                    new MessageDto(channelId.toString(), null, null, authorId, "tie " + i, "plain", false, null, null));
+            assertTrue(created.wasNoError());
+            firstPageIds.add(created.response().metadata().id());
+        }
+
+        // Every message really does share one timestamp.
+        final var all = tiedMessages.list(channelId, 100, null, null).response();
+        assertEquals(6, all.size());
+        all.forEach(m -> assertEquals(sharedInstant, m.metadata().createdAt()));
+
+        // Walk backwards one message at a time; every message must be seen exactly once.
+        final var seen = new LinkedHashSet<String>();
+        String cursor = null;
+        for (int page = 0; page < 12; page++) {
+            final var result = tiedMessages.list(channelId, 1, cursor, null);
+            if (!result.wasNoError() || result.response().isEmpty()) {
+                break;
+            }
+            final var message = result.response().get(0);
+            assertTrue(seen.add(message.metadata().id()), "message visited twice: " + message.metadata().id());
+            cursor = cursorOf(message);
+        }
+        assertEquals(firstPageIds, seen, "timestamp ties must not be skipped or repeated");
+    }
+
+    /**
+     * Message store whose clock never advances, forcing every write onto one identical
+     * {@code createdAt}. Mirrors the generated memory provider but with an injected clock.
+     */
+    private static final class FixedClockMessageStore extends InMemoryAetherResourceStore<MessageDto>
+            implements MessageDtoStore {
+
+        FixedClockMessageStore(final Instant instant) {
+            super(Clock.fixed(instant, ZoneOffset.UTC), () -> "v1");
+        }
+    }
+
+    private static String cursorOf(final AetherPersisted<MessageDto> persisted) {
+        return MessageCursor.of(persisted.metadata().createdAt(), persisted.metadata().id()).encode();
     }
 
     @Test
@@ -340,8 +424,12 @@ class CoreServicesInMemoryTest {
         assertFalse(authorization.canManageChannels(agent));
         assertFalse(authorization.canVerifyCapabilities(agent));
 
-        assertTrue(authorization.canReadPublicChannel(agent, "channel-1"));
-        assertTrue(authorization.canPostToPublicChannel(agent, "channel-1"));
+        assertTrue(authorization.canAccessChannel(agent, "channel-1", true));
+        assertTrue(authorization.canPostToChannel(agent, "channel-1", true));
+        assertFalse(authorization.canAccessChannel(agent, "channel-1", false));
+        assertFalse(authorization.canPostToChannel(agent, "channel-1", false));
+        assertTrue(authorization.canAccessChannel(admin, "channel-1", false));
+        assertTrue(authorization.canPostToChannel(admin, "channel-1", false));
         assertTrue(authorization.canUpdateOwnStatus(agent, agent.agentId()));
         assertFalse(authorization.canUpdateOwnStatus(agent, admin.agentId()));
     }

@@ -7,6 +7,8 @@ import java.util.UUID;
 /**
  * HTTP API representation of a message.
  *
+ * @param cursor opaque pagination position for this message; pass it back as the
+ *        {@code before} or {@code after} query parameter to resume reading around it
  * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
  * @since 1.0.0
  */
@@ -22,5 +24,6 @@ public record ApiMessageDto(
         @SerializedName("updatedAt") String updatedAt,
         @SerializedName("deleted") boolean deleted,
         @SerializedName("deletedAt") String deletedAt,
-        @SerializedName("deletedByAgentId") UUID deletedByAgentId) {
+        @SerializedName("deletedByAgentId") UUID deletedByAgentId,
+        @SerializedName("cursor") String cursor) {
 }

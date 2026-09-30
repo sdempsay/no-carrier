@@ -26,7 +26,6 @@ import org.dempsay.agenthub.core.service.BearerAuthService;
 import org.dempsay.agenthub.core.service.ChannelService;
 import org.dempsay.agenthub.core.service.CredentialServiceImpl;
 import org.dempsay.agenthub.core.service.MessageService;
-import org.dempsay.agenthub.core.service.NoOpNotificationPort;
 import org.dempsay.agenthub.store.fs.FsAgentCredentialDtoStore;
 import org.dempsay.agenthub.store.fs.FsAgentDtoStore;
 import org.dempsay.agenthub.store.fs.FsChannelDtoStore;
@@ -88,7 +87,8 @@ public final class HubRuntime implements AutoCloseable {
         final AgentRegistryPort agents = new AgentRegistryService(agentStore);
         final CredentialServicePort credentials = new CredentialServiceImpl(credentialStore, hasher);
         final ChannelPort channels = new ChannelService(channelStore);
-        final MessagePort messages = new MessageService(messageStore, new NoOpNotificationPort());
+        final var wakeups = new ChannelWakeups();
+        final MessagePort messages = new MessageService(messageStore, new WakeupNotificationPort(wakeups));
         final BearerAuthPort auth = new BearerAuthService(credentialStore, agentStore, hasher);
         final AuthorizationPort authorization = new AuthorizationService();
         final BootstrapCredentialPort bootstrap = new BootstrapCredentialService(agents, credentials);
@@ -103,7 +103,7 @@ public final class HubRuntime implements AutoCloseable {
 
         final HttpAdapter http = new HttpAdapter(config.port(), config.bindAddress());
         final var services = new HubServices(agents, credentials, channels, messages, auth, authorization);
-        new ApiRoutes(http, services, config.maxMessageSize()).register();
+        new ApiRoutes(http, services, config.maxMessageSize(), wakeups).register();
         http.start();
 
         return new HubRuntime(config, http, adminKey);

@@ -45,7 +45,14 @@ Agent Hub is a local, authenticated coordination hub for human and automated age
 From the repository root:
 
 ```bash
-PATH="/opt/homebrew/bin:$PATH" mvn -DskipDocker package
+JAVA_HOME=$(/usr/libexec/java_home -v 21) PATH="/opt/homebrew/bin:$PATH" mvn -DskipDocker package
 ```
+
+`JAVA_HOME` is not optional. `maven.compiler.release` pins the bytecode level to 21, but Maven also
+decides the JVM that compiles *and runs the tests* from `PATH`, and Homebrew's JDK sits first there.
+Surefire then forks the suite on a newer JDK than the artifact targets, which hides runtime
+behaviour differences: an exchange-attribute guard passed the whole suite on Java 26 while the Java
+21 artifact answered exactly one request and then hung. `CompiledReleaseMatchesTestJvmTest` fails the
+build on that drift, so run the suite on JDK 21.
 
 During scaffolding, project-wide style checks may be skipped only when necessary to isolate compilation or dependency issues; do not treat a skipped check as a passing quality gate.

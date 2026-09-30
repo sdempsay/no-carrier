@@ -111,3 +111,61 @@ Work log for no-carrier. Task board: [GitHub Issues](https://github.com/sdempsay
 - Request ID honored or minted on every response.
 - Structured errors with code, message, requestId.
 - Builds clean with zero checkstyle violations; in-memory tests pass.
+
+## 2026-09-30 — Runnable jar, authorization, opaque cursors, long poll, console
+
+- `agent-hub-app` now attaches a shaded `exec` jar (`-exec.jar`, main class `AgentHubApp`) while the plain jar keeps its OSGi headers. `AppConfig` accepts `--data-dir`, `--bind-address`, `--port`, `--in-memory`, `--max-message-size`, `--heartbeat-timeout`, `--pbkdf2-iterations`, and `--help`, with environment fallback.
+- `AuthorizationPort` is now visibility-aware (`canAccessChannel`, `canPostToChannel`). Private channels are enforced as admin-only; non-members get `403` on both reads and writes, where writes previously succeeded with `201`. Full membership and roles remain [#10](https://github.com/sdempsay/no-carrier/issues/10).
+- Pagination cursors are opaque base64url tokens over `epochSecond:nano:id`. Timestamps are not unique, so a timestamp-only cursor skipped or repeated whole tied groups: a fixed-clock test with six messages sharing one `createdAt` saw 1 of 6 under the old logic and all 6 exactly once now. Malformed and legacy ISO cursors return `422`.
+- `PUT /api/v1/agents/{agent}/status` sets `online`/`busy`/`away`/`offline` for self or admin and preserves `lastSeenAt`.
+- `GET /api/v1/channels/{channel}/messages` accepts `wait=0..60` backed by per-channel epochs in `ChannelWakeups`, so one post wakes every parked waiter. Replacing the epoch with a consumable flag strands the second waiter; the test covers three concurrent waiters.
+- `GET /` and `/index.html` serve a single-file console at `agent-hub-app/src/main/resources/web/console.html`. The shell needs no credential and is served `no-store`; the API key is held in browser `localStorage`, which suits only the loopback default.
+- `scripts/tail-channel.py` follows a channel with cursor resumption, id deduplication, backlog rendering, and `--send`.
+
+### The server answered exactly one request, then stopped
+
+Every request after the first hung. `HttpAdapter.sendSuccess` guarded double writes with
+`exchange.setAttribute(RESPONDED, ...)`, but `HttpExchange` attributes are not per-request: on
+JDK 21.0.2 the same map is reused across exchanges, so every later request found the flag set,
+skipped the write, and returned without a body. The client waited forever.
+
+The guard now lives in a `ResponseGuard` owned by `RequestContext`, which is created per request,
+so nothing depends on JDK attribute semantics. Ruled out along the way: server backlog (`0`),
+the virtual-thread executor (a cached pool behaved identically), the filesystem store (in-memory
+reproduced), and the shaded jar (the unshaded classpath reproduced).
+
+The bug survived the entire test suite because Surefire runs on JDK 26.0.1, where the attribute
+map behaves per-exchange, and because each HTTP test builds its own server, so a fresh instance
+re-emptied the flag. `StandaloneServerSmokeTest` now boots `AgentHubApp` in a separate JVM and
+drives it over real sockets. It fails against the old guard on JDK 21 and passes with the fix.
+
+Also note the toolchain drift: `mvn` picks up Homebrew JDK 26 from `/opt/homebrew/bin`, while the
+shell `java` that runs the exec jar is Oracle JDK 21.0.2. The project targets Java 21, so the
+build and the shipped runtime were different JVMs.
+
+### Verified end to end
+
+Against the packaged `exec` jar: 3 agents registered with one-time keys, per-agent statuses, 6
+messages from 3 authors, cursor paging returning all 6 exactly once, legacy cursor rejected with
+`422`, long poll waking on a new post, private-channel read and write denied for non-members,
+public writes allowed, console served with no embedded credential. `tail-channel.py` streamed
+live messages while a separate client posted.
+
+`PATH="/opt/homebrew/bin:$PATH" mvn -DskipDocker package` is green on JDK 21 and on JDK 26 with
+zero checkstyle violations: 8 API, 36 store, 40 app tests (2 smoke, 37 HTTP, 1 standalone process).
+
+### Build JVM tripwire
+
+`maven.compiler.release` is 21 and the emitted bytecode is class major 65, so the artifact is
+genuinely Java 21. It does not choose the JVM that runs the tests: Surefire inherits whatever `mvn`
+runs on, and Homebrew's JDK 26 sits ahead of Oracle 21 on `PATH` here. That is exactly how the
+exchange-attribute bug passed every test.
+
+`CompiledReleaseMatchesTestJvmTest` reads the major version out of `HttpAdapter.class` and asserts the
+test JVM's feature version matches it. It self-adjusts when `maven.compiler.release` changes, and
+fails with an actionable message otherwise. Verified failing on JDK 26 and passing on JDK 21.
+
+Skipped a `~/.m2/toolchains.xml` plus `maven-toolchains-plugin` instead: a toolchain is only consulted
+by builds that use the plugin, and requiring it means every other machine and CI needs an untracked
+local file before the build runs at all. Pinning `JAVA_HOME` in the documented command gets the same
+determinism with nothing machine-local.

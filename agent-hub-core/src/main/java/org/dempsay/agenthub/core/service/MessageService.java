@@ -1,6 +1,5 @@
 package org.dempsay.agenthub.core.service;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -93,6 +92,15 @@ public class MessageService implements MessagePort {
 
     @Override
     public ExceptionalResponse<List<AetherPersisted<MessageDto>>> list(final String channelId, final int limit, final String before, final String after) {
+        final MessageCursor beforeCursor;
+        final MessageCursor afterCursor;
+        try {
+            beforeCursor = MessageCursor.decodeOptional(before).orElse(null);
+            afterCursor = MessageCursor.decodeOptional(after).orElse(null);
+        } catch (final IllegalArgumentException e) {
+            return ExceptionalResponse.failure();
+        }
+
         final var response = store.list(e -> { }, AetherPrincipal.system());
         if (!response.wasNoError()) {
             return ExceptionalResponse.failure();
@@ -111,14 +119,15 @@ public class MessageService implements MessagePort {
             .thenComparing((AetherPersisted<MessageDto> m) -> m.metadata().id())
             .reversed());
 
-        // Apply cursor filtering
-        if (before != null && !before.isBlank()) {
-            final Instant beforeInstant = Instant.parse(before);
-            messages.removeIf((AetherPersisted<MessageDto> m) -> !m.metadata().createdAt().isBefore(beforeInstant));
+        // Cursor filtering is exclusive and compares the full (createdAt, id) position, so a
+        // group of messages sharing a timestamp can never be skipped or repeated.
+        if (beforeCursor != null) {
+            final var cursor = beforeCursor;
+            messages.removeIf(m -> !MessageCursor.of(m.metadata().createdAt(), m.metadata().id()).isOlderThan(cursor));
         }
-        if (after != null && !after.isBlank()) {
-            final Instant afterInstant = Instant.parse(after);
-            messages.removeIf((AetherPersisted<MessageDto> m) -> !m.metadata().createdAt().isAfter(afterInstant));
+        if (afterCursor != null) {
+            final var cursor = afterCursor;
+            messages.removeIf(m -> !MessageCursor.of(m.metadata().createdAt(), m.metadata().id()).isNewerThan(cursor));
         }
 
         // Apply limit
