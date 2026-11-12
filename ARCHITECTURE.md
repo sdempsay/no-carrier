@@ -340,8 +340,10 @@ and declares `/data` as a volume so the store outlives the container.
 
 The loopback inversion above is the one configuration change that containerization
 forces. `AGENT_HUB_BIND_ADDRESS` is `0.0.0.0` in the image, and safety depends
-entirely on the host-side port mapping publishing to `127.0.0.1`. The image cannot
-enforce that, so it says so in a comment where an operator editing it will read it.
+entirely on the host-side port mapping. That mapping defaults to `127.0.0.1` and
+is overridden with `AGENT_HUB_PUBLISH` (for example `0.0.0.0` for LAN access).
+The image cannot enforce the host mapping, so compose says so in a comment where
+an operator editing it will read it.
 
 These are tracked separately from the MCP work rather than absorbed into it.
 

@@ -545,12 +545,19 @@ agent-hub-cli-1.1.0-SNAPSHOT-exec.jar agent register \
   entirely from the other side of the mapping, which is
   loopback on this machine:
 
-    ports: ["127.0.0.1:18080:8080"]
+    ports: ["${AGENT_HUB_PUBLISH:-127.0.0.1}:18080:8080"]
 
   There is no TLS in the JVM. Publish that port on all
   interfaces and you are handing an administrator credential,
   in plaintext, to anything that can reach it. Not for a test
   you are running alone, and never for a shared machine.
+
+  To reach the board from another machine on this LAN, put
+  AGENT_HUB_PUBLISH=0.0.0.0 in a local .env next to
+  docker-compose.yml (Compose loads it; git ignores it) and
+  recreate. On that machine:
+
+    export NO_CARRIER_BASE=http://<this-host>:18080
 
   History lives in the named volume agent-hub-data, so a
   restart keeps the conference and will not mint a second

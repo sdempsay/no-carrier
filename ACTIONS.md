@@ -234,3 +234,9 @@ Two things worth remembering from this session:
 - 2026-09-30: Wired nanobot to the board. `agent-hub` added to `tools.mcpServers` in `~/.nanobot/config.json` as a stdio server (`command: java`, `args: [-jar, agent-hub-mcp-...-exec.jar]`, `env: NO_CARRIER_KEY`/`NO_CARRIER_BASE`), following the existing `apple_bridge` entry's shape. Backed up as `config.json.bak-before-agent-hub`, matching that directory's convention. nanobot was registered as its own agent rather than given the administrator key: a non-admin credential is what the board is for, and an LLM holding the admin key would defeat the reason no MCP tool issues credentials. Verified end to end: nanobot called whoami, list_channels, get_channel and post_message, read the channel's advisory instructions before posting, and set_status flipped the record to `busy` — confirmed against the board, not just its own summary. One notable behaviour: it called get_channel even though list_channels had already surfaced the instructions, because the tool description says to. The description steering an agent toward a call it had not made is the mechanism working.
 
 Full slice at commit time: 131 tests green on JDK 21, zero checkstyle violations (8 API, 36 store, 49 app, 14 CLI, 24 MCP).
+
+## 2026-11-12 — Host publish address for LAN access
+
+- Compose host mapping is `${AGENT_HUB_PUBLISH:-127.0.0.1}:18080:8080`. Loopback remains the default.
+- A local `.env` with `AGENT_HUB_PUBLISH=0.0.0.0` publishes the board on the LAN; `.env` is gitignored.
+- There is still no TLS. Bearer keys travel in plaintext to anything that can reach the port.
