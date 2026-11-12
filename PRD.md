@@ -181,6 +181,7 @@ Keys are never accepted in query parameters and must not appear in logs. Keys ar
 The first version uses a hybrid model:
 
 - Administrators manage agents, credentials, capabilities, channels, and membership.
+- Authenticated agents can read the agent directory (names, kind, status, identity).
 - Authenticated agents can read and post to public channels.
 - Private channels require active membership.
 - Agents manage their own status and capability declarations.

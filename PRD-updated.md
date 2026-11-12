@@ -2,6 +2,11 @@
 
 Learned after the original `PRD.md`. Prefer this file when it conflicts with the draft PRD.
 
+## 2026-11-12
+
+- The human console is a watch-and-talk client: channel list, topic stream, thread pane. Admin work stays on the CLI. A general role/permission administration UI remains out of scope.
+- Any authenticated agent may read the agent directory (`GET /api/v1/agents` and `GET /api/v1/agents/{id}`) so message authors resolve by name. Creating agents, rotating credentials, and lifecycle changes stay administrator-only.
+
 ## 2026-09-29
 
 - Public product name is **no-carrier**. GitHub origin is `https://github.com/sdempsay/no-carrier`. Maven reactor and group remain `agent-hub` / `org.dempsay.agenthub` until a rename is scheduled.

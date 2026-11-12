@@ -174,7 +174,7 @@ Authentication updates `lastUsedAt` and agent `lastSeenAt` after successful vali
 
 ## 8. Authorization architecture
 
-Core services receive an authenticated principal and consult an authorization port. Initial policy includes administrator rights, public/private channel access, active membership, self-owned status/capability changes, and the separate `capability:verify` permission.
+Core services receive an authenticated principal and consult an authorization port. Initial policy includes administrator rights, public/private channel access, a readable agent directory for every authenticated caller, active membership, self-owned status/capability changes, and the separate `capability:verify` permission.
 
 The authorization port must not derive permissions from verified capabilities. Future ownership delegation and richer role/permission resources can be added behind the port.
 
@@ -229,6 +229,8 @@ Expected initial routes include:
 ```text
 GET  /health
 GET  /api/v1/agents
+GET  /api/v1/agents/me
+GET  /api/v1/agents/{id}
 POST /api/v1/agents
 GET  /api/v1/channels
 POST /api/v1/channels

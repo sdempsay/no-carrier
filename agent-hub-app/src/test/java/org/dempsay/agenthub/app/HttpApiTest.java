@@ -97,16 +97,16 @@ class HttpApiTest {
     }
 
     @Test
-    void nonAdminCannotManageChannelsOrListAgents() throws Exception {
+    void nonAdminCannotManageChannelsOrCreateAgents() throws Exception {
         final var agentKey = registerAgent("helper");
 
         final var channels = post("/api/v1/channels", "{\"slug\":\"general\",\"name\":\"General\"}", agentKey);
         assertEquals(403, channels.statusCode());
         assertEquals("FORBIDDEN", json(channels).get("code").getAsString());
 
-        final var agents = get("/api/v1/agents", agentKey, null);
-        assertEquals(403, agents.statusCode());
-        assertEquals("FORBIDDEN", json(agents).get("code").getAsString());
+        final var created = post("/api/v1/agents", "{\"name\":\"sidekick\",\"kind\":\"automated\"}", agentKey);
+        assertEquals(403, created.statusCode());
+        assertEquals("FORBIDDEN", json(created).get("code").getAsString());
     }
 
     @Test
@@ -406,6 +406,7 @@ class HttpApiTest {
         assertTrue(root.headers().firstValue("Content-Type").orElse("").startsWith("text/html"));
         assertTrue(root.body().contains("no-carrier"), "console should render its own shell");
         assertTrue(root.body().contains("wait=25"), "console should use the long-poll endpoint");
+        assertTrue(root.body().contains("/api/v1/agents/me"), "console should identify the pasted key");
         assertTrue(root.headers().firstValue("Cache-Control").orElse("").contains("no-store"));
 
         final var named = get("/index.html", null, null);
@@ -698,12 +699,29 @@ class HttpApiTest {
     }
 
     @Test
-    void letsAnOrdinaryAgentSeeItselfButNotOthers() throws Exception {
+    void letsAnOrdinaryAgentReadAuthorNames() throws Exception {
         final var erinKey = registerAgent("erin");
+        final var admin = json(get("/api/v1/agents/me", adminKey, null));
+        final var adminId = admin.get("id").getAsString();
 
-        assertEquals(200, get("/api/v1/agents/me", erinKey, null).statusCode());
-        assertEquals(403, get("/api/v1/agents", erinKey, null).statusCode(),
-                "an ordinary agent must not be able to list the registry");
+        final var me = json(get("/api/v1/agents/me", erinKey, null));
+        assertEquals("erin", me.get("name").getAsString());
+
+        final var directory = array(get("/api/v1/agents", erinKey, null));
+        assertTrue(directory.size() >= 2, "directory must include the caller and the administrator");
+        var sawAdmin = false;
+        var sawErin = false;
+        for (var i = 0; i < directory.size(); i++) {
+            final var name = directory.get(i).getAsJsonObject().get("name").getAsString();
+            sawAdmin = sawAdmin || "admin".equals(name);
+            sawErin = sawErin || "erin".equals(name);
+        }
+        assertTrue(sawAdmin, "an ordinary agent must see the administrator's name");
+        assertTrue(sawErin, "an ordinary agent must see its own name in the directory");
+
+        final var byId = json(get("/api/v1/agents/" + adminId, erinKey, null));
+        assertEquals("admin", byId.get("name").getAsString());
+        assertEquals(adminId, byId.get("id").getAsString());
     }
 
     private HttpResponse<String> put(final String path, final String body, final String key) throws Exception {

@@ -69,6 +69,7 @@ public final class ApiRoutes {
 
         http.get("/api/v1/agents", this::handleListAgents);
         http.get("/api/v1/agents/me", this::handleWhoAmI);
+        http.get("/api/v1/agents/{" + AGENT + "}", this::handleGetAgent);
         http.post("/api/v1/agents", this::handleCreateAgent);
         http.post("/api/v1/agents/{" + AGENT + "}/heartbeat", this::handleHeartbeat);
         http.put("/api/v1/agents/{" + AGENT + "}/status", this::handleUpdateStatus);
@@ -111,8 +112,8 @@ public final class ApiRoutes {
         if (principal == null) {
             return;
         }
-        if (!services.authorization().canManageAgents(principal)) {
-            forbidden(context, "Listing agents requires administrator credentials");
+        if (!services.authorization().canReadAgentDirectory(principal)) {
+            forbidden(context, "Reading the agent directory is not allowed");
             return;
         }
 
@@ -143,6 +144,35 @@ public final class ApiRoutes {
         final var found = services.agents().get(principal.agentId());
         if (found.wasError()) {
             sendError(context, 404, "NOT_FOUND", "The credential names an agent that no longer exists");
+            return;
+        }
+
+        sendJson(context, 200, toApiAgent(found.response()));
+    }
+
+    /**
+     * Resolves one agent by id for any authenticated caller. Author names on the board
+     * come from this record, so the directory cannot be admin-only.
+     */
+    private void handleGetAgent(final HttpAdapter.RequestContext context) throws IOException {
+        final var principal = authenticate(context);
+        if (principal == null) {
+            return;
+        }
+        if (!services.authorization().canReadAgentDirectory(principal)) {
+            forbidden(context, "Reading the agent directory is not allowed");
+            return;
+        }
+
+        final var raw = context.pathVariables().get(AGENT);
+        if (!HttpAdapter.isUuid(raw)) {
+            notFound(context, "Agent not found");
+            return;
+        }
+
+        final var found = services.agents().get(UUID.fromString(raw));
+        if (found.wasError()) {
+            notFound(context, "Agent not found");
             return;
         }
 

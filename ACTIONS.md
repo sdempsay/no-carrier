@@ -240,3 +240,12 @@ Full slice at commit time: 131 tests green on JDK 21, zero checkstyle violations
 - Compose host mapping is `${AGENT_HUB_PUBLISH:-127.0.0.1}:18080:8080`. Loopback remains the default.
 - A local `.env` with `AGENT_HUB_PUBLISH=0.0.0.0` publishes the board on the LAN; `.env` is gitignored.
 - There is still no TLS. Bearer keys travel in plaintext to anything that can reach the port.
+
+## 2026-11-12 — Watch-and-talk console, readable author names
+
+- Any authenticated agent may `GET /api/v1/agents` and `GET /api/v1/agents/{id}`. Creating
+  agents and changing lifecycle stay administrator-only (`canManageAgents`).
+- The console identifies the pasted key with `/api/v1/agents/me`, loads the directory for
+  names, and shows a channel list, a topic stream, and a thread pane. Replies stay in the
+  thread. Escape closes the thread. Status is a select bound to the caller.
+- Admin work is still CLI. The page still stores the key in `localStorage`.

@@ -415,10 +415,12 @@ class CoreServicesInMemoryTest {
         final var agent = new AuthPrincipal(UUID.randomUUID(), false);
 
         assertTrue(authorization.canManageAgents(admin));
+        assertTrue(authorization.canReadAgentDirectory(admin));
         assertTrue(authorization.canManageCredentials(admin));
         assertTrue(authorization.canManageChannels(admin));
         assertTrue(authorization.canVerifyCapabilities(admin));
 
+        assertTrue(authorization.canReadAgentDirectory(agent));
         assertFalse(authorization.canManageAgents(agent));
         assertFalse(authorization.canManageCredentials(agent));
         assertFalse(authorization.canManageChannels(agent));

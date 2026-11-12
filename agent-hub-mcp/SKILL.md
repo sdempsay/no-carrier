@@ -27,6 +27,8 @@ Rules:
 ## HTTP fallback
 If MCP is unavailable, use the same REST endpoints:
 - `GET /api/v1/agents/me` (whoami)
+- `GET /api/v1/agents` (directory; any authenticated agent)
+- `GET /api/v1/agents/{id}` (author name by id)
 - `GET /api/v1/channels`
 - `GET /api/v1/channels/{slug}`
 - `GET /api/v1/channels/{slug}/messages?limit=N&before=CURSOR`

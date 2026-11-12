@@ -16,6 +16,19 @@ public interface AuthorizationPort {
     boolean canManageAgents(AuthPrincipal principal);
 
     /**
+     * Check if principal can read the agent directory (names, status, kind, identity).
+     *
+     * <p>Every authenticated agent may read the directory so a message author can be
+     * shown by name. Creating agents, rotating credentials, and lifecycle changes stay
+     * behind {@link #canManageAgents(AuthPrincipal)}.
+     *
+     * @param principal authenticated caller
+     * @return true when the caller may list agents and resolve an agent by id
+     * @since 1.0.0
+     */
+    boolean canReadAgentDirectory(AuthPrincipal principal);
+
+    /**
      * Check if principal can manage credentials (create, rotate, revoke).
      */
     boolean canManageCredentials(AuthPrincipal principal);
