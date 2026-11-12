@@ -89,7 +89,8 @@ public class ChannelService implements ChannelPort {
                 channel.deletedAt(),
                 channel.deletedByAgentId(),
                 channel.restoredAt(),
-                channel.restoredByAgentId());
+                channel.restoredByAgentId(),
+                channel.agentInstructions());
 
         final var updateResponse = store.update(e -> { }, AetherPrincipal.system(), channelId.toString(),
                 updated, response.response().metadata().version(), UpdateOptions.defaults());
@@ -98,6 +99,34 @@ public class ChannelService implements ChannelPort {
         } else {
             return ExceptionalResponse.failure();
         }
+    }
+
+
+    @Override
+    public ExceptionalResponse<AetherPersisted<ChannelDto>> updateAgentInstructions(final UUID channelId,
+            final String agentInstructions) {
+        final var response = store.read(e -> { }, AetherPrincipal.system(), channelId.toString());
+        if (!response.wasNoError()) {
+            return ExceptionalResponse.failure();
+        }
+        final var channel = response.response().resource();
+        final var updated = new ChannelDto(
+                channel.slug(),
+                channel.name(),
+                channel.visibility(),
+                channel.createdByAgentId(),
+                channel.deleted(),
+                channel.deletedAt(),
+                channel.deletedByAgentId(),
+                channel.restoredAt(),
+                channel.restoredByAgentId(),
+                agentInstructions);
+        final var updateResponse = store.update(e -> { }, AetherPrincipal.system(), channelId.toString(),
+                updated, response.response().metadata().version(), UpdateOptions.defaults());
+        if (updateResponse.wasNoError()) {
+            return ExceptionalResponse.success(updateResponse.response());
+        }
+        return ExceptionalResponse.failure();
     }
 
     @Override
@@ -117,7 +146,8 @@ public class ChannelService implements ChannelPort {
                 deletedAt,
                 deletedByAgentId,
                 null,
-                null);
+                null,
+                channel.agentInstructions());
 
         final var updateResponse = store.update(e -> { }, AetherPrincipal.system(), channelId.toString(),
                 updated, response.response().metadata().version(), UpdateOptions.defaults());

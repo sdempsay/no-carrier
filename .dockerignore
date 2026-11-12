@@ -1,0 +1,6 @@
+# The image needs one file: the shaded app jar. Everything else in this repository is
+# source, docs, or build output that would bloat the context and risk being baked in.
+**
+!agent-hub-app
+!agent-hub-app/target
+!agent-hub-app/target/*-exec.jar

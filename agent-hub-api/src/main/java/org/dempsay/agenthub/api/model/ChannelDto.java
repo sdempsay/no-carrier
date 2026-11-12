@@ -43,5 +43,6 @@ public record ChannelDto(
         @Nullable @MinLength(1) @MaxLength(64) String deletedAt,
         @Nullable @MinLength(1) @MaxLength(64) String deletedByAgentId,
         @Nullable @MinLength(1) @MaxLength(64) String restoredAt,
-        @Nullable @MinLength(1) @MaxLength(64) String restoredByAgentId) {
+        @Nullable @MinLength(1) @MaxLength(64) String restoredByAgentId,
+        @Nullable @MinLength(1) @MaxLength(600) String agentInstructions) {
 }

@@ -11,5 +11,6 @@ import com.google.gson.annotations.SerializedName;
 public record CreateChannelRequest(
         @SerializedName("slug") String slug,
         @SerializedName("name") String name,
-        @SerializedName("visibility") String visibility) {
+        @SerializedName("visibility") String visibility,
+        @SerializedName("agentInstructions") String agentInstructions) {
 }

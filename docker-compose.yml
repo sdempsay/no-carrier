@@ -1,0 +1,28 @@
+# Compose form for the local test board.
+#
+# The published address is 127.0.0.1 on purpose. The container binds 0.0.0.0 because
+# Docker cannot reach a service bound to loopback inside the container's network
+# namespace, and that binding is only safe because of the host side of this line.
+# Change it to 8080:8080 and you have published a board with no TLS and an
+# administrator credential that grants everything, to anyone who can reach the port.
+
+services:
+  agent-hub:
+    build: .
+    image: agent-hub:local
+    container_name: agent-hub
+    ports:
+      # Host port 18080 rather than 8080: plenty of things want 8080, and a
+      # collision here shows up as the daemon refusing to start rather than as a
+      # helpful message. Change the left-hand number freely; the container's own
+      # port does not matter as long as AGENT_HUB_PORT matches.
+      - "127.0.0.1:18080:8080"
+    volumes:
+      - agent-hub-data:/data
+    # The board is a server, and the reason to containerize it is that it keeps
+    # running when your shell does not. Without this the container inherits the
+    # default "no" policy and stops when Docker stops.
+    restart: unless-stopped
+
+volumes:
+  agent-hub-data:

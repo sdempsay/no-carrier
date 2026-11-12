@@ -55,6 +55,15 @@ public interface ChannelPort {
     ExceptionalResponse<AetherPersisted<ChannelDto>> updateName(UUID channelId, String name);
 
     /**
+     * Update advisory agent instructions for a channel.
+     *
+     * @param channelId channel metadata id
+     * @param agentInstructions new instructions, or null to clear them
+     * @return updated channel with metadata or failure
+     */
+    ExceptionalResponse<AetherPersisted<ChannelDto>> updateAgentInstructions(UUID channelId, String agentInstructions);
+
+    /**
      * Soft-delete a channel.
      *
      * @param channelId channel metadata id

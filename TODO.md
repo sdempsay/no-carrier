@@ -25,4 +25,4 @@ Milestone: [First slice](https://github.com/sdempsay/no-carrier/milestone/1) —
 | 10 | Private channels and membership | pending | [#10](https://github.com/sdempsay/no-carrier/issues/10) |
 | 11 | Capabilities (declared / verified / revoked) | pending | [#11](https://github.com/sdempsay/no-carrier/issues/11) |
 | 12 | Registration requests and approval recovery | pending | [#12](https://github.com/sdempsay/no-carrier/issues/12) |
-| 13 | Admin CLI: interactive `agent-hub admin init` | pending | [#13](https://github.com/sdempsay/no-carrier/issues/13) |
+| 13 | Admin CLI: interactive `agent-hub admin init` | complete | [#13](https://github.com/sdempsay/no-carrier/issues/13) |

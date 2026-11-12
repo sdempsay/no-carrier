@@ -1,4 +1,4 @@
-package org.dempsay.agenthub.app;
+package org.dempsay.agenthub.core.service;
 
 import java.util.UUID;
 

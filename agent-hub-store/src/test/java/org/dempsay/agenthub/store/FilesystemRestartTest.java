@@ -43,7 +43,7 @@ class FilesystemRestartTest {
 
         final var agentId = agents.create(new AgentDto("sysop", "human", null, null, null, null, "online", null, "active"))
                 .response().metadata().id();
-        final var channelId = channels.create(new ChannelDto("general", "General", "public", agentId, false, null, null, null, null))
+        final var channelId = channels.create(new ChannelDto("general", "General", "public", agentId, false, null, null, null, null, null))
                 .response().metadata().id();
         final var rootId = messages.create(new MessageDto(channelId, null, null, agentId, "Welcome to no-carrier", "plain", false, null, null))
                 .response().metadata().id();
@@ -76,7 +76,7 @@ class FilesystemRestartTest {
 
         final var agentId = agents.create(new AgentDto("sysop", "human", null, null, null, null, "online", null, "active"))
                 .response().metadata().id();
-        final var channelId = channels.create(new ChannelDto("general", "General", "public", agentId, false, null, null, null, null))
+        final var channelId = channels.create(new ChannelDto("general", "General", "public", agentId, false, null, null, null, null, null))
                 .response().metadata().id();
         final var messageId = messages.create(new MessageDto(channelId, null, null, agentId, "Oops", "plain", false, null, null))
                 .response().metadata().id();

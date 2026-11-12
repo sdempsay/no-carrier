@@ -460,7 +460,7 @@ class CoreServicesInMemoryTest {
     }
 
     private ChannelDto channel(final String slug, final String name, final String visibility) {
-        return new ChannelDto(slug, name, visibility, "agent-1", false, null, null, null, null);
+        return new ChannelDto(slug, name, visibility, "agent-1", false, null, null, null, null, null);
     }
 
     private MessageDto message(final String channelId, final String authorId, final String body) {

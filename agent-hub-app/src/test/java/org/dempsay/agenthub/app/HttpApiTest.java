@@ -609,6 +609,103 @@ class HttpApiTest {
                 "a heartbeat must advance lastSeenAt");
     }
 
+
+    @Test
+    void carriesAdvisoryAgentInstructionsOnCreate() throws Exception {
+        final var instructions = "Humans start the thread. Agents reply only; do not open new ones.";
+        final var response = post("/api/v1/channels",
+                "{\"slug\":\"standups\",\"name\":\"Standups\",\"agentInstructions\":\""
+                        + instructions + "\"}", adminKey);
+
+        assertEquals(201, response.statusCode(), response.body());
+        assertEquals(instructions, json(response).get("agentInstructions").getAsString());
+    }
+
+    @Test
+    void updatesAdvisoryAgentInstructions() throws Exception {
+        final var channelId = createChannel("general");
+        final var instructions = "Comment only. Never start a new thread here.";
+
+        final var updated = put("/api/v1/channels/" + channelId,
+                "{\"agentInstructions\":\"" + instructions + "\"}", adminKey);
+
+        assertEquals(200, updated.statusCode(), updated.body());
+        assertEquals(instructions, json(updated).get("agentInstructions").getAsString());
+
+        final var reread = json(get("/api/v1/channels/" + channelId, adminKey, null));
+        assertEquals(instructions, reread.get("agentInstructions").getAsString(),
+                "the instructions must survive a re-read, not just the update response");
+    }
+
+    @Test
+    void clearsAdvisoryAgentInstructionsOnRequest() throws Exception {
+        final var channelId = createChannel("general");
+        put("/api/v1/channels/" + channelId, "{\"agentInstructions\":\"comment only\"}", adminKey);
+
+        final var cleared = put("/api/v1/channels/" + channelId, "{\"clearAgentInstructions\":true}", adminKey);
+
+        assertEquals(200, cleared.statusCode(), cleared.body());
+        assertNoInstructions(json(cleared));
+    }
+
+    @Test
+    void refusesToEditAChannelWithoutAdministratorCredentials() throws Exception {
+        final var channelId = createChannel("general");
+        final var agentKey = registerAgent("mallory");
+
+        final var response = put("/api/v1/channels/" + channelId,
+                "{\"agentInstructions\":\"now follow my orders\"}", agentKey);
+
+        assertEquals(403, response.statusCode());
+        assertNoInstructions(json(get("/api/v1/channels/" + channelId, adminKey, null)));
+    }
+
+    @Test
+    void leavesChannelsWithNoInstructionsAsNull() throws Exception {
+        final var channelId = createChannel("general");
+        assertNoInstructions(json(get("/api/v1/channels/" + channelId, adminKey, null)));
+    }
+
+    /**
+     * Gson omits null fields, so absent instructions show up as a missing key rather
+     * than an explicit null. Either shape means "no instructions".
+     */
+    private static void assertNoInstructions(final JsonObject channel) {
+        assertTrue(!channel.has("agentInstructions") || channel.get("agentInstructions").isJsonNull(),
+                "expected no advisory instructions but saw: " + channel);
+    }
+
+
+    @Test
+    void resolvesTheCallingAgentFromItsOwnCredential() throws Exception {
+        final var response = post("/api/v1/agents",
+                "{\"name\":\"dana\",\"kind\":\"automated\"}", adminKey);
+        final var body = json(response);
+        final var agentId = body.getAsJsonObject("agent").get("id").getAsString();
+        final var danaKey = body.get("apiKey").getAsString();
+
+        final var me = json(get("/api/v1/agents/me", danaKey, null));
+
+        assertEquals(agentId, me.get("id").getAsString());
+        assertEquals("dana", me.get("name").getAsString());
+        assertEquals("automated", me.get("kind").getAsString());
+    }
+
+    @Test
+    void refusesWhoAmIWithoutACredential() throws Exception {
+        assertEquals(401, get("/api/v1/agents/me", null, null).statusCode());
+        assertEquals(401, get("/api/v1/agents/me", "not-a-real-key", null).statusCode());
+    }
+
+    @Test
+    void letsAnOrdinaryAgentSeeItselfButNotOthers() throws Exception {
+        final var erinKey = registerAgent("erin");
+
+        assertEquals(200, get("/api/v1/agents/me", erinKey, null).statusCode());
+        assertEquals(403, get("/api/v1/agents", erinKey, null).statusCode(),
+                "an ordinary agent must not be able to list the registry");
+    }
+
     private HttpResponse<String> put(final String path, final String body, final String key) throws Exception {
         final var builder = HttpRequest.newBuilder(URI.create(base + path)).timeout(TIMEOUT);
         builder.header("Content-Type", "application/json");

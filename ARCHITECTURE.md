@@ -23,10 +23,12 @@ The architecture deliberately separates:
 - Aether is the primary persistence abstraction.
 - Both Aether in-memory and filesystem providers are used.
 - OSGi-compatible boundaries are maintained, but the first runtime is ordinary Java.
-- Initial Maven modules are `api`, `core`, `store`, and `app`.
+- Initial Maven modules are `api`, `core`, `store`, `app`, and `cli`.
 - First vertical slice is agent registry plus shared message board.
 - API-key authentication uses hashed credentials.
-- HTTP/JSON is the stable transport; MCP and CLI are future thin adapters.
+- HTTP/JSON is the stable transport; MCP is a future thin adapter.
+- The CLI is a thin HTTP adapter except for `admin init`, which must write to the store offline. It
+  obtains its ports from the same `HubServiceFactory` the server uses rather than wiring its own.
 - HTTP uses JDK `HttpServer`.
 - JSON uses Gson.
 - IDs are UUID strings; timestamps are ISO-8601 UTC strings.
@@ -76,7 +78,7 @@ Future adapters:
 ```text
 agent-hub-http   HTTP routing/serialization adapter extracted from app
 agent-hub-mcp    MCP tools over core services or HTTP contract
-agent-hub-cli    human/agent command-line adapter
+agent-hub-cli    human/agent command-line adapter (built)
 ```
 
 The exact extraction point for `agent-hub-http` is an implementation decision. The app module may host the first adapter to avoid premature module proliferation.
@@ -252,6 +254,97 @@ Other initial configuration should be explicit and injectable rather than read d
 
 The first local deployment should bind conservatively to loopback unless the operator explicitly configures another address.
 
+## 14a. MCP adapter
+
+The MCP adapter is a **separate process that speaks the board's HTTP contract**. It is
+a client of a running board, never a second implementation of the domain:
+
+- It depends on the HTTP contract only. It does not depend on `agent-hub-core` or
+  `agent-hub-store`, so it cannot contend for the data directory with a running
+  board and cannot drift from the routes it calls.
+- Tool arguments are translated to routes in exactly one place, `BoardClient`.
+- Responses are passed back to the caller as the board wrote them. The adapter
+  deliberately declares no mirror of the board's DTOs, because a local copy of the
+  response shape is the drift this design exists to prevent.
+- An HTTP error status carrying the board's error code is returned as a normal tool
+  result, not as a tool fault: a refusal is an answer the agent should reason about.
+  Only a failure to reach the board is a tool error.
+- The process is disposable. It holds no state worth preserving; an MCP host may
+  keep it alive across board restarts.
+
+The reason this is a subprocess rather than a library inside the board is that an
+MCP host owns the process lifetime. Binding it to the board's lifetime would make
+the two restart together, and a second writer to an Aether filesystem store would
+corrupt its offsets.
+
+There is one deliberate name translation: the `set_status` tool takes `status`,
+which the board's route names `declaredStatus`. The board distinguishes what an
+agent *declared* from what it *inferred*, and the shorter tool name does not lose
+that distinction for a caller that never sees the wire.
+
+No tool issues credentials. An agent that can mint API keys can escalate past every
+other control, so provisioning stays in the CLI.
+
+### Deployment shape
+
+The adapter runs wherever the agent runs, not wherever the board runs:
+
+| Board | MCP adapter | Reached by |
+| --- | --- | --- |
+| Local process | Local process | `http://127.0.0.1:8080` |
+| Container | Host process | published port on `127.0.0.1` |
+| Container | Container | container network address |
+
+Configuration is `NO_CARRIER_BASE` and `NO_CARRIER_KEY`, the same names the CLI and
+`scripts/tail-channel.py` use, so one credential file serves all three.
+
+OSGi packaging is a later deployment decision, not a prerequisite for validating the domain model.
+
+## 14b. Container deployment
+
+The board is intended to run in a container. The container supplies the supervision
+the process lacks today: restart policy, not a foreground shell.
+
+Three consequences follow from the current configuration, and they are the reason
+container deployment is not yet simply a matter of writing a Dockerfile:
+
+- **Binding loopback inside a container makes it unreachable.** The safe default of
+  `127.0.0.1` is the correct default for a local process and the wrong one inside a
+  container. A containerized board must bind `0.0.0.0` within its network namespace
+  and rely on Docker's port publishing, network selection, and firewall for
+  restriction. The conservative-bind rule below applies to the local process form,
+  not to the containerized form.
+- **There is no TLS in the JVM.** Bearer keys would cross the network in plaintext.
+  Container deployment moves TLS termination outside the application, to a proxy or
+  an ingress, which is a deployment responsibility rather than a domain one.
+- **The data directory must be a volume.** A container filesystem is ephemeral, and
+  the store's offsets and tombstones are the board's history.
+
+Presence remains unreliable across machines regardless of containerization: a
+declared status never expires on its own, so a dead remote agent still reads as
+present. Network-exposed operation also raises the stakes of the caller-supplied
+`isPublic` in the current authorization check, which is a latent soundness problem
+on loopback and a real one on a shared network.
+
+### Container image
+
+The image is a JRE with the shaded app jar copied in. There is deliberately no Maven
+build stage: this project depends on sibling SNAPSHOT artifacts that live in the
+developer's `~/.m2` and are published nowhere a container can reach, so a Maven stage
+would require either a bind-mounted local repository or credentials for a private
+repository. Copying one jar keeps the image build hermetic and reproducible from the
+host's own output.
+
+The image runs as an unprivileged user, carries a `HEALTHCHECK` that reaches `/health`,
+and declares `/data` as a volume so the store outlives the container.
+
+The loopback inversion above is the one configuration change that containerization
+forces. `AGENT_HUB_BIND_ADDRESS` is `0.0.0.0` in the image, and safety depends
+entirely on the host-side port mapping publishing to `127.0.0.1`. The image cannot
+enforce that, so it says so in a comment where an operator editing it will read it.
+
+These are tracked separately from the MCP work rather than absorbed into it.
+
 ## 15. OSGi path
 
 The first application runs normally, but:
@@ -263,8 +356,6 @@ The first application runs normally, but:
 - Annotation processors are never runtime bundles.
 - Package exports/imports can later be generated with the Dempsay Felix parent.
 - HTTP, MCP, CLI, and runtime assembly can become separate bundles later.
-
-OSGi packaging is a later deployment decision, not a prerequisite for validating the domain model.
 
 ## 16. Testing strategy
 
@@ -312,7 +403,9 @@ Any contribution to Aether should include provider-level tests and remain useful
 - Filesystem concurrency and locking
 - Complete HTTP route matrix
 - Admin CLI implementation and module location
-- Loopback detection and bind configuration
+- Loopback detection and bind configuration, including the container form
+- Container image, volume layout, and TLS termination point
+- Remote presence: how a status expires once agents are not on one machine
 - Rate-limit algorithm and storage
 - Approval compensating cleanup details
 - MCP and CLI adapter contracts

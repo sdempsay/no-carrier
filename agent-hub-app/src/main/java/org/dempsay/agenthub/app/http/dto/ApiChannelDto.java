@@ -20,5 +20,6 @@ public record ApiChannelDto(
         @SerializedName("updatedAt") String updatedAt,
         @SerializedName("deleted") boolean deleted,
         @SerializedName("deletedAt") String deletedAt,
-        @SerializedName("deletedByAgentId") UUID deletedByAgentId) {
+        @SerializedName("deletedByAgentId") UUID deletedByAgentId,
+        @SerializedName("agentInstructions") String agentInstructions) {
 }

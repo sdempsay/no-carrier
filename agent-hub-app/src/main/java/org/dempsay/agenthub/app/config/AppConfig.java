@@ -1,8 +1,9 @@
 package org.dempsay.agenthub.app.config;
 
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Map;
+
+import org.dempsay.agenthub.core.HubDefaults;
 
 /**
  * Application configuration.
@@ -29,7 +30,7 @@ public record AppConfig(
     public static final int DEFAULT_PORT = 8080;
     public static final int DEFAULT_MAX_MESSAGE_SIZE = 16384;
     public static final int DEFAULT_HEARTBEAT_TIMEOUT_SECONDS = 300;
-    public static final int DEFAULT_PBKDF2_ITERATIONS = 600_000;
+    public static final int DEFAULT_PBKDF2_ITERATIONS = HubDefaults.DEFAULT_PBKDF2_ITERATIONS;
     public static final String LOOPBACK = "127.0.0.1";
 
     public AppConfig(final Path dataDir, final String bindAddress, final int port, final int maxMessageSize,
@@ -105,10 +106,7 @@ public record AppConfig(
         rejectUnknownOptions(args);
 
         final var persistent = !hasFlag(args, "--in-memory");
-        final var dataDirText = resolveString(args, "--data-dir", null);
-        final var dataDir = persistent
-                ? Paths.get(dataDirText == null ? defaultDataDir() : dataDirText)
-                : null;
+        final var dataDir = persistent ? HubDefaults.resolveDataDir(argValue(args, "--data-dir")) : null;
 
         return new AppConfig(
                 dataDir,
@@ -118,14 +116,6 @@ public record AppConfig(
                 resolveInt(args, "--heartbeat-timeout", DEFAULT_HEARTBEAT_TIMEOUT_SECONDS),
                 resolveInt(args, "--pbkdf2-iterations", DEFAULT_PBKDF2_ITERATIONS),
                 persistent);
-    }
-
-    private static String defaultDataDir() {
-        final var envDir = System.getenv("AGENT_HUB_DATA_DIR");
-        if (envDir != null && !envDir.isBlank()) {
-            return envDir;
-        }
-        return Paths.get(System.getProperty("user.home"), ".agent-hub", "data").toString();
     }
 
     private static String resolveString(final String[] args, final String option, final String fallback) {

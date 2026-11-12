@@ -1,40 +1,13 @@
 package org.dempsay.agenthub.app;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
 import java.util.UUID;
 
-import org.dempsay.agenthub.api.model.AgentCredentialDtoStore;
-import org.dempsay.agenthub.api.model.AgentDtoStore;
-import org.dempsay.agenthub.api.model.ChannelDtoStore;
-import org.dempsay.agenthub.api.model.MessageDtoStore;
 import org.dempsay.agenthub.app.config.AppConfig;
 import org.dempsay.agenthub.app.http.ApiRoutes;
 import org.dempsay.agenthub.app.http.HttpAdapter;
-import org.dempsay.agenthub.core.port.AgentRegistryPort;
-import org.dempsay.agenthub.core.port.AuthorizationPort;
-import org.dempsay.agenthub.core.port.BearerAuthPort;
-import org.dempsay.agenthub.core.port.BootstrapCredentialPort;
-import org.dempsay.agenthub.core.port.ChannelPort;
-import org.dempsay.agenthub.core.port.CredentialHashPort;
-import org.dempsay.agenthub.core.port.CredentialServicePort;
-import org.dempsay.agenthub.core.port.MessagePort;
-import org.dempsay.agenthub.core.service.AgentRegistryService;
-import org.dempsay.agenthub.core.service.AuthorizationService;
-import org.dempsay.agenthub.core.service.BearerAuthService;
-import org.dempsay.agenthub.core.service.ChannelService;
-import org.dempsay.agenthub.core.service.CredentialServiceImpl;
-import org.dempsay.agenthub.core.service.MessageService;
-import org.dempsay.agenthub.store.fs.FsAgentCredentialDtoStore;
-import org.dempsay.agenthub.store.fs.FsAgentDtoStore;
-import org.dempsay.agenthub.store.fs.FsChannelDtoStore;
-import org.dempsay.agenthub.store.fs.FsMessageDtoStore;
-import org.dempsay.agenthub.store.hash.Pbkdf2CredentialHasher;
-import org.dempsay.agenthub.store.memory.MemoryAgentCredentialDtoStore;
-import org.dempsay.agenthub.store.memory.MemoryAgentDtoStore;
-import org.dempsay.agenthub.store.memory.MemoryChannelDtoStore;
-import org.dempsay.agenthub.store.memory.MemoryMessageDtoStore;
+import org.dempsay.agenthub.core.service.BootstrapCredentialService;
+import org.dempsay.agenthub.store.HubServiceFactory;
 
 /**
  * Wires the full hub and serves HTTP. Used by {@link AgentHubApp} and by tests
@@ -62,48 +35,20 @@ public final class HubRuntime implements AutoCloseable {
      * @throws IOException if the socket cannot be bound
      */
     public static HubRuntime start(final AppConfig config) throws IOException {
-        if (config.persistent()) {
-            try {
-                Files.createDirectories(config.dataDir());
-            } catch (IOException e) {
-                throw new UncheckedIOException("Unable to create data directory " + config.dataDir(), e);
-            }
-        }
-
-        final AgentDtoStore agentStore = config.persistent()
-                ? new FsAgentDtoStore(config.dataDir())
-                : new MemoryAgentDtoStore();
-        final AgentCredentialDtoStore credentialStore = config.persistent()
-                ? new FsAgentCredentialDtoStore(config.dataDir())
-                : new MemoryAgentCredentialDtoStore();
-        final ChannelDtoStore channelStore = config.persistent()
-                ? new FsChannelDtoStore(config.dataDir())
-                : new MemoryChannelDtoStore();
-        final MessageDtoStore messageStore = config.persistent()
-                ? new FsMessageDtoStore(config.dataDir())
-                : new MemoryMessageDtoStore();
-
-        final CredentialHashPort hasher = new Pbkdf2CredentialHasher(config.pbkdf2Iterations());
-        final AgentRegistryPort agents = new AgentRegistryService(agentStore);
-        final CredentialServicePort credentials = new CredentialServiceImpl(credentialStore, hasher);
-        final ChannelPort channels = new ChannelService(channelStore);
         final var wakeups = new ChannelWakeups();
-        final MessagePort messages = new MessageService(messageStore, new WakeupNotificationPort(wakeups));
-        final BearerAuthPort auth = new BearerAuthService(credentialStore, agentStore, hasher);
-        final AuthorizationPort authorization = new AuthorizationService();
-        final BootstrapCredentialPort bootstrap = new BootstrapCredentialService(agents, credentials);
+        final var graph = HubServiceFactory.create(config.persistent(), config.dataDir(),
+                config.pbkdf2Iterations(), new WakeupNotificationPort(wakeups));
 
         String adminKey = null;
-        if (!bootstrap.adminExists()) {
+        if (!graph.bootstrap().adminExists()) {
             adminKey = UUID.randomUUID().toString().replace("-", "");
-            if (bootstrap.initializeAdmin(BootstrapCredentialService.ADMIN_NAME, adminKey).wasError()) {
+            if (graph.bootstrap().initializeAdmin(BootstrapCredentialService.ADMIN_NAME, adminKey).wasError()) {
                 throw new IllegalStateException("Unable to bootstrap the administrator credential");
             }
         }
 
         final HttpAdapter http = new HttpAdapter(config.port(), config.bindAddress());
-        final var services = new HubServices(agents, credentials, channels, messages, auth, authorization);
-        new ApiRoutes(http, services, config.maxMessageSize(), wakeups).register();
+        new ApiRoutes(http, graph, config.maxMessageSize(), wakeups).register();
         http.start();
 
         return new HubRuntime(config, http, adminKey);

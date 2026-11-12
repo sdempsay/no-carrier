@@ -16,13 +16,14 @@ import org.dempsay.agenthub.api.model.AgentDto;
 import org.dempsay.agenthub.api.model.ChannelDto;
 import org.dempsay.agenthub.api.model.MessageDto;
 import org.dempsay.agenthub.app.ChannelWakeups;
-import org.dempsay.agenthub.app.HubServices;
+import org.dempsay.agenthub.store.HubServiceGraph;
 import org.dempsay.agenthub.app.http.dto.ApiAgentDto;
 import org.dempsay.agenthub.app.http.dto.ApiChannelDto;
 import org.dempsay.agenthub.app.http.dto.ApiMessageDto;
 import org.dempsay.agenthub.app.http.dto.CreateAgentRequest;
 import org.dempsay.agenthub.app.http.dto.CreateChannelRequest;
 import org.dempsay.agenthub.app.http.dto.CreateMessageRequest;
+import org.dempsay.agenthub.app.http.dto.UpdateChannelRequest;
 import org.dempsay.agenthub.app.http.dto.UpdateStatusRequest;
 import org.dempsay.aether.api.store.AetherPersisted;
 import org.dempsay.agenthub.core.port.AuthPrincipal;
@@ -36,6 +37,7 @@ import org.dempsay.agenthub.core.service.MessageCursor;
  */
 public final class ApiRoutes {
     private static final String CHANNEL = "channel";
+    private static final int MAX_AGENT_INSTRUCTIONS = 600;
     private static final String AGENT = "agent";
     private static final int MAX_LIMIT = 100;
 
@@ -48,11 +50,11 @@ public final class ApiRoutes {
     private static final String CONSOLE_RESOURCE = "/web/console.html";
 
     private final HttpAdapter http;
-    private final HubServices services;
+    private final HubServiceGraph services;
     private final int maxMessageSize;
     private final ChannelWakeups wakeups;
 
-    public ApiRoutes(final HttpAdapter http, final HubServices services, final int maxMessageSize,
+    public ApiRoutes(final HttpAdapter http, final HubServiceGraph services, final int maxMessageSize,
             final ChannelWakeups wakeups) {
         this.http = http;
         this.services = services;
@@ -66,6 +68,7 @@ public final class ApiRoutes {
         http.get("/", this::handleConsole);
 
         http.get("/api/v1/agents", this::handleListAgents);
+        http.get("/api/v1/agents/me", this::handleWhoAmI);
         http.post("/api/v1/agents", this::handleCreateAgent);
         http.post("/api/v1/agents/{" + AGENT + "}/heartbeat", this::handleHeartbeat);
         http.put("/api/v1/agents/{" + AGENT + "}/status", this::handleUpdateStatus);
@@ -73,6 +76,7 @@ public final class ApiRoutes {
         http.get("/api/v1/channels", this::handleListChannels);
         http.post("/api/v1/channels", this::handleCreateChannel);
         http.get("/api/v1/channels/{" + CHANNEL + "}", this::handleGetChannel);
+        http.put("/api/v1/channels/{" + CHANNEL + "}", this::handleUpdateChannel);
 
         http.get("/api/v1/channels/{" + CHANNEL + "}/messages", this::handleListMessages);
         http.post("/api/v1/channels/{" + CHANNEL + "}/messages", this::handleCreateMessage);
@@ -119,6 +123,30 @@ public final class ApiRoutes {
         }
 
         sendJson(context, 200, result.response().stream().map(ApiRoutes::toApiAgent).collect(Collectors.toList()));
+    }
+
+
+    /**
+     * Resolves the calling agent from its own credential.
+     *
+     * <p>An agent cannot look itself up by id, because it does not know its id: the id
+     * only appears in the response that created it. Without this route there is no way
+     * for an agent to confirm its key works, learn its own id, or address the status
+     * and heartbeat endpoints that require that id in the path.
+     */
+    private void handleWhoAmI(final HttpAdapter.RequestContext context) throws IOException {
+        final var principal = authenticate(context);
+        if (principal == null) {
+            return;
+        }
+
+        final var found = services.agents().get(principal.agentId());
+        if (found.wasError()) {
+            sendError(context, 404, "NOT_FOUND", "The credential names an agent that no longer exists");
+            return;
+        }
+
+        sendJson(context, 200, toApiAgent(found.response()));
     }
 
     private void handleCreateAgent(final HttpAdapter.RequestContext context) throws IOException {
@@ -294,8 +322,9 @@ public final class ApiRoutes {
             return;
         }
 
+        final var agentInstructions = isBlank(request.agentInstructions()) ? null : request.agentInstructions();
         final var result = services.channels().create(new ChannelDto(request.slug(), request.name(), visibility,
-                principal.agentId().toString(), false, null, null, null, null));
+                principal.agentId().toString(), false, null, null, null, null, agentInstructions));
         if (result.wasError()) {
             sendError(context, 409, "CONFLICT", "Channel slug is already taken");
             return;
@@ -303,6 +332,62 @@ public final class ApiRoutes {
 
         final var channel = result.response();
         sendCreated(context, "/api/v1/channels/" + channel.metadata().id(), toApiChannel(channel));
+    }
+
+
+    private void handleUpdateChannel(final HttpAdapter.RequestContext context) throws IOException {
+        final var principal = authenticate(context);
+        if (principal == null) {
+            return;
+        }
+        if (!services.authorization().canManageChannels(principal)) {
+            forbidden(context, "Updating channels requires administrator credentials");
+            return;
+        }
+
+        final var channel = resolveChannel(context.pathVariables().get(CHANNEL));
+        if (channel == null) {
+            notFound(context, "Channel not found");
+            return;
+        }
+
+        final var request = readBody(context, UpdateChannelRequest.class);
+        if (request == null) {
+            validationFailed(context, List.of(new ErrorResponse.Violation("body", "a request body is required")));
+            return;
+        }
+
+        final var channelId = UUID.fromString(channel.metadata().id());
+
+        if (!isBlank(request.name())) {
+            final var renamed = services.channels().updateName(channelId, request.name().trim());
+            if (renamed.wasError()) {
+                sendError(context, 409, "CONFLICT", "Unable to rename the channel");
+                return;
+            }
+        }
+
+        if (Boolean.TRUE.equals(request.clearAgentInstructions())) {
+            final var cleared = services.channels().updateAgentInstructions(channelId, null);
+            if (cleared.wasError()) {
+                sendError(context, 409, "CONFLICT", "Unable to clear the channel instructions");
+                return;
+            }
+        } else if (!isBlank(request.agentInstructions())) {
+            final var instructions = request.agentInstructions().trim();
+            if (instructions.length() > MAX_AGENT_INSTRUCTIONS) {
+                validationFailed(context, List.of(new ErrorResponse.Violation("agentInstructions",
+                        "instructions must be at most " + MAX_AGENT_INSTRUCTIONS + " characters")));
+                return;
+            }
+            final var updated = services.channels().updateAgentInstructions(channelId, instructions);
+            if (updated.wasError()) {
+                sendError(context, 409, "CONFLICT", "Unable to update the channel instructions");
+                return;
+            }
+        }
+
+        sendJson(context, 200, toApiChannel(resolveChannel(channel.metadata().id())));
     }
 
     private void handleGetChannel(final HttpAdapter.RequestContext context) throws IOException {
@@ -613,7 +698,8 @@ public final class ApiRoutes {
                 metadata.updatedAt().toString(),
                 Boolean.TRUE.equals(channel.deleted()),
                 channel.deletedAt(),
-                channel.deletedByAgentId() == null ? null : UUID.fromString(channel.deletedByAgentId()));
+                channel.deletedByAgentId() == null ? null : UUID.fromString(channel.deletedByAgentId()),
+                channel.agentInstructions());
     }
 
     private static ApiMessageDto toApiMessage(final org.dempsay.aether.api.store.AetherPersisted<MessageDto> persisted) {
