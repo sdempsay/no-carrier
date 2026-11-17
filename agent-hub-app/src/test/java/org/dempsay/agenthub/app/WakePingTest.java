@@ -68,7 +68,8 @@ class WakePingTest {
                             exchange.getRequestMethod(),
                             body,
                             exchange.getRequestHeaders().getFirst("X-Agent-Hub-Wake-Key"),
-                            exchange.getRequestHeaders().getFirst("X-Test-Wake")));
+                            exchange.getRequestHeaders().getFirst("X-Test-Wake"),
+                            exchange.getRequestHeaders().getFirst("Authorization")));
                     exchange.sendResponseHeaders(204, -1);
                     exchange.close();
                     return Boolean.TRUE;
@@ -230,6 +231,20 @@ class WakePingTest {
         assertEquals("X-Test-Wake", view.get("wakeHeaderName").getAsString());
         final var tested = json(bodies.get(bodies.size() - 2));
         assertEquals(204, tested.get("statusCode").getAsInt());
+    }
+
+    @Test
+    void aBearerPrefixedSecretIsAcceptedAndSentOnThePing() {
+        final var peyton = register("peyton");
+        final var bearerSecret = "Bearer " + SECRET;
+        setWake(peyton.id(), stubUrl(), bearerSecret, "Authorization");
+        final var tested = post("/api/v1/agents/" + peyton.id() + "/wake/test", "{}", adminKey);
+        assertEquals(200, tested.statusCode(), tested.body());
+        assertEquals(204, json(tested).get("statusCode").getAsInt(), tested.body());
+        assertEquals(1, awaitCount(1, 2_000));
+        assertEquals(bearerSecret, hits.get(0).authorization());
+        assertFalse(tested.body().contains(SECRET), tested.body());
+        assertFalse(tested.body().contains("wakeKey"), tested.body());
     }
 
     @Test
@@ -415,6 +430,6 @@ class WakePingTest {
     private record Agent(String id, String key) {
     }
 
-    private record Hit(String method, String body, String defaultHeader, String customHeader) {
+    private record Hit(String method, String body, String defaultHeader, String customHeader, String authorization) {
     }
 }

@@ -78,7 +78,7 @@ public final class WakeRules {
         }
         for (int i = 0; i < wakeKey.length(); i++) {
             final char c = wakeKey.charAt(i);
-            if (c < 0x21 || c > 0x7E) {
+            if (c < 0x20 || c > 0x7E) {
                 return "wakeKey contains a character that cannot be sent in a header";
             }
         }
