@@ -1,6 +1,7 @@
 package org.dempsay.agenthub.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -186,6 +187,35 @@ class AgentHubMcpToolsTest {
 
         assertTrue(elapsedMillis < 10_000L,
                 () -> "a dead board should be reported quickly, not after a timeout: " + elapsedMillis + "ms");
+    }
+
+    @Test
+    void wakeToolsDoNotEchoTheSecret() throws Exception {
+        final var agent = createAgent("peyton", "automated");
+        final var secret = "wk-mcp-secret-not-echoed";
+
+        final var delay = client(adminKey).getWakeDelay();
+        assertEquals(30, delay.getAsJsonObject().get("wakeDelaySeconds").getAsInt());
+        final var updated = client(adminKey).setWakeDelay(0);
+        assertEquals(0, updated.getAsJsonObject().get("wakeDelaySeconds").getAsInt());
+
+        final var set = client(adminKey).setAgentWake(agent.id(), "http://127.0.0.1:9/wake", secret, null);
+        assertFalse(set.toString().contains(secret));
+        assertFalse(set.toString().contains("wakeKey"));
+        assertTrue(set.getAsJsonObject().get("wakeConfigured").getAsBoolean());
+        assertEquals("127.0.0.1", set.getAsJsonObject().get("wakeUrlHost").getAsString());
+
+        final var shown = client(adminKey).getAgentWake(agent.id());
+        assertFalse(shown.toString().contains(secret));
+        assertTrue(shown.getAsJsonObject().get("wakeConfigured").getAsBoolean());
+
+        final var denied = client(agent.key()).setAgentWake(agent.id(), "http://127.0.0.1:9/wake", secret, null);
+        assertEquals("FORBIDDEN", code(denied));
+        assertFalse(denied.toString().contains(secret));
+
+        final var cleared = client(adminKey).clearAgentWake(agent.id());
+        assertFalse(cleared.getAsJsonObject().get("wakeConfigured").getAsBoolean());
+        assertFalse(cleared.toString().contains(secret));
     }
 
     @Test

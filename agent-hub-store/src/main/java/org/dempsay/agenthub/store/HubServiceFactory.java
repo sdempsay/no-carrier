@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import org.dempsay.agenthub.api.model.AgentCredentialDtoStore;
 import org.dempsay.agenthub.api.model.AgentDtoStore;
 import org.dempsay.agenthub.api.model.ChannelDtoStore;
+import org.dempsay.agenthub.api.model.HubSettingsDtoStore;
 import org.dempsay.agenthub.api.model.MessageDtoStore;
 import org.dempsay.agenthub.core.port.CredentialHashPort;
 import org.dempsay.agenthub.core.service.AgentRegistryService;
@@ -17,15 +18,18 @@ import org.dempsay.agenthub.core.service.BootstrapCredentialService;
 import org.dempsay.agenthub.core.service.ChannelService;
 import org.dempsay.agenthub.core.service.CredentialServiceImpl;
 import org.dempsay.agenthub.core.service.MessageService;
+import org.dempsay.agenthub.core.service.WakeSettingsService;
 import org.dempsay.agenthub.core.port.NotificationPort;
 import org.dempsay.agenthub.store.fs.FsAgentCredentialDtoStore;
 import org.dempsay.agenthub.store.fs.FsAgentDtoStore;
 import org.dempsay.agenthub.store.fs.FsChannelDtoStore;
+import org.dempsay.agenthub.store.fs.FsHubSettingsDtoStore;
 import org.dempsay.agenthub.store.fs.FsMessageDtoStore;
 import org.dempsay.agenthub.store.hash.Pbkdf2CredentialHasher;
 import org.dempsay.agenthub.store.memory.MemoryAgentCredentialDtoStore;
 import org.dempsay.agenthub.store.memory.MemoryAgentDtoStore;
 import org.dempsay.agenthub.store.memory.MemoryChannelDtoStore;
+import org.dempsay.agenthub.store.memory.MemoryHubSettingsDtoStore;
 import org.dempsay.agenthub.store.memory.MemoryMessageDtoStore;
 
 /**
@@ -69,6 +73,9 @@ public final class HubServiceFactory {
         final CredentialHashPort hasher = new Pbkdf2CredentialHasher(pbkdf2Iterations);
         final var agents = new AgentRegistryService(agentStore);
         final var credentials = new CredentialServiceImpl(credentialStore, hasher);
+        final HubSettingsDtoStore settingsStore = persistent
+                ? new FsHubSettingsDtoStore(dataDir)
+                : new MemoryHubSettingsDtoStore();
 
         return new HubServiceGraph(
                 agents,
@@ -78,7 +85,8 @@ public final class HubServiceFactory {
                 new BearerAuthService(credentialStore, agentStore, hasher),
                 new AuthorizationService(),
                 notifications,
-                new BootstrapCredentialService(agents, credentials));
+                new BootstrapCredentialService(agents, credentials),
+                new WakeSettingsService(agents, settingsStore));
     }
 
     private static void createDirectories(final Path dataDir) {

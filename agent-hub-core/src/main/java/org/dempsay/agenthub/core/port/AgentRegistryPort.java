@@ -55,4 +55,20 @@ public interface AgentRegistryPort {
      * @return updated agent with metadata or failure
      */
     ExceptionalResponse<AetherPersisted<AgentDto>> updateStatus(UUID agentId, String declaredStatus, String lastSeenAt);
+
+    /**
+     * Replaces an agent's wake settings. Other fields are kept.
+     *
+     * <p>Null clears the corresponding field. The secret is stored so the board can
+     * present it later; callers must not return it from an API.
+     *
+     * @param agentId agent metadata id
+     * @param wakeUrl wake URL, or null to clear
+     * @param wakeKey wake secret, or null to clear
+     * @param wakeHeaderName header name, or null for the default
+     * @return updated agent, or failure when the agent does not exist
+     * @since 1.0.0
+     */
+    ExceptionalResponse<AetherPersisted<AgentDto>> updateWake(UUID agentId, String wakeUrl, String wakeKey,
+            String wakeHeaderName);
 }

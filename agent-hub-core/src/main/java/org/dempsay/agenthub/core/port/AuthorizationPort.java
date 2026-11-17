@@ -73,4 +73,16 @@ public interface AuthorizationPort {
      * Check if principal can verify capabilities (admin only initially).
      */
     boolean canVerifyCapabilities(AuthPrincipal principal);
+
+    /**
+     * Check if the principal may set or clear wake settings and the wake delay.
+     *
+     * <p>True for an administrator, and for a principal that can manage channels.
+     * Those are the same set of callers today.
+     *
+     * @param principal authenticated caller
+     * @return true when the caller may change wake configuration
+     * @since 1.0.0
+     */
+    boolean canConfigureWake(AuthPrincipal principal);
 }

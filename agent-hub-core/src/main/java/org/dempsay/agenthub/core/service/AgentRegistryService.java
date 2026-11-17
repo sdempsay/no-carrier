@@ -57,16 +57,7 @@ public class AgentRegistryService implements AgentRegistryPort {
         }
 
         var agent = response.response().resource();
-        var updated = new AgentDto(
-                agent.name(),
-                agent.kind(),
-                agent.ownerAgentId(),
-                agent.provider(),
-                agent.model(),
-                agent.endpoint(),
-                agent.declaredStatus(),
-                agent.lastSeenAt(),
-                lifecycleState);
+        var updated = agent.withLifecycle(lifecycleState);
 
         final var updateResponse = store.update(e -> { }, AetherPrincipal.system(), agentId.toString(),
                 updated, response.response().metadata().version(), UpdateOptions.defaults());
@@ -85,17 +76,26 @@ public class AgentRegistryService implements AgentRegistryPort {
         }
 
         var agent = response.response().resource();
-        var updated = new AgentDto(
-                agent.name(),
-                agent.kind(),
-                agent.ownerAgentId(),
-                agent.provider(),
-                agent.model(),
-                agent.endpoint(),
-                declaredStatus,
-                lastSeenAt,
-                agent.lifecycleState());
+        var updated = agent.withStatus(declaredStatus, lastSeenAt);
 
+        final var updateResponse = store.update(e -> { }, AetherPrincipal.system(), agentId.toString(),
+                updated, response.response().metadata().version(), UpdateOptions.defaults());
+        if (updateResponse.wasNoError()) {
+            return ExceptionalResponse.success(updateResponse.response());
+        } else {
+            return ExceptionalResponse.failure();
+        }
+    }
+
+    @Override
+    public ExceptionalResponse<AetherPersisted<AgentDto>> updateWake(final UUID agentId, final String wakeUrl,
+            final String wakeKey, final String wakeHeaderName) {
+        final var response = store.read(e -> { }, AetherPrincipal.system(), agentId.toString());
+        if (!response.wasNoError()) {
+            return ExceptionalResponse.failure();
+        }
+
+        final var updated = response.response().resource().withWake(wakeUrl, wakeKey, wakeHeaderName);
         final var updateResponse = store.update(e -> { }, AetherPrincipal.system(), agentId.toString(),
                 updated, response.response().metadata().version(), UpdateOptions.defaults());
         if (updateResponse.wasNoError()) {

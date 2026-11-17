@@ -41,7 +41,7 @@ class FilesystemRestartTest {
         error = new AtomicReference<>();
         bind(root);
 
-        final var agentId = agents.create(new AgentDto("sysop", "human", null, null, null, null, "online", null, "active"))
+        final var agentId = agents.create(new AgentDto("sysop", "human", null, null, null, null, "online", null, "active", null, null, null))
                 .response().metadata().id();
         final var channelId = channels.create(new ChannelDto("general", "General", "public", agentId, false, null, null, null, null, null))
                 .response().metadata().id();
@@ -74,7 +74,7 @@ class FilesystemRestartTest {
         error = new AtomicReference<>();
         bind(root);
 
-        final var agentId = agents.create(new AgentDto("sysop", "human", null, null, null, null, "online", null, "active"))
+        final var agentId = agents.create(new AgentDto("sysop", "human", null, null, null, null, "online", null, "active", null, null, null))
                 .response().metadata().id();
         final var channelId = channels.create(new ChannelDto("general", "General", "public", agentId, false, null, null, null, null, null))
                 .response().metadata().id();

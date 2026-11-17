@@ -18,6 +18,16 @@ public final class HubDefaults {
     /** Credential hashing cost. Must match on both sides of a credential. */
     public static final int DEFAULT_PBKDF2_ITERATIONS = 600_000;
 
+    /**
+     * How long, in seconds, the board waits after the first relevant message before
+     * sending one wake ping. Used when an administrator has not stored a delay.
+     * {@code 0} sends on the next scheduler turn rather than waiting.
+     */
+    public static final int DEFAULT_WAKE_DELAY_SECONDS = 30;
+
+    /** Largest accepted {@code wakeDelaySeconds}. */
+    public static final int MAX_WAKE_DELAY_SECONDS = 300;
+
     /** Environment variable overriding the persistence root. */
     public static final String DATA_DIR_ENV = "AGENT_HUB_DATA_DIR";
 

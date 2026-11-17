@@ -31,7 +31,7 @@ public final class BootstrapCredentialService implements BootstrapCredentialPort
     @Override
     public ExceptionalResponse<UUID> initializeAdmin(final String administratorName, final String plaintextKey) {
         final var created = agents.create(new AgentDto(administratorName, "human", null, null, null, null, "online", null,
-                "active"));
+                "active", null, null, null));
         if (created.wasError()) {
             return ExceptionalResponse.failure();
         }
