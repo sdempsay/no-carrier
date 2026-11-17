@@ -1,5 +1,6 @@
 package org.dempsay.agenthub.core.service;
 
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -26,7 +27,7 @@ import org.dempsay.utils.exceptional.api.ExceptionalResponse;
  * older document does not contain them.
  *
  * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
- * @since 1.1.0
+ * @since 1.0.0
  */
 public final class WakeSettingsService implements WakeSettingsPort {
     private final AgentRegistryPort agents;
@@ -59,9 +60,10 @@ public final class WakeSettingsService implements WakeSettingsPort {
             return ExceptionalResponse.failure();
         }
         final var agent = found.response().resource();
-        final var newKey = wakeKey == null ? agent.wakeKey() : blankToNull(wakeKey);
-        final var newHeader = wakeHeaderName == null ? agent.wakeHeaderName() : blankToNull(wakeHeaderName);
-        final var updated = agents.updateWake(agentId, wakeUrl.trim(), newKey, newHeader == null ? null : newHeader.trim());
+        final var newKey = Objects.isNull(wakeKey) ? agent.wakeKey() : blankToNull(wakeKey);
+        final var newHeader = Objects.isNull(wakeHeaderName) ? agent.wakeHeaderName() : blankToNull(wakeHeaderName);
+        final String storedHeader = Objects.isNull(newHeader) ? null : newHeader.trim();
+        final var updated = agents.updateWake(agentId, wakeUrl.trim(), newKey, storedHeader);
         if (updated.wasError()) {
             return ExceptionalResponse.failure();
         }
@@ -146,7 +148,7 @@ public final class WakeSettingsService implements WakeSettingsPort {
     }
 
     private static String blankToNull(final String value) {
-        if (value == null || value.isBlank()) {
+        if (Objects.isNull(value) || value.isBlank()) {
             return null;
         }
         return value;

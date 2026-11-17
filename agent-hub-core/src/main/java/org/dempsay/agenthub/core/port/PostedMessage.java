@@ -13,7 +13,7 @@ package org.dempsay.agenthub.core.port;
  * @param authorAgentId author id
  * @param deleted whether the stored row is a tombstone
  * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
- * @since 1.1.0
+ * @since 1.0.0
  */
 public record PostedMessage(
         String messageId,

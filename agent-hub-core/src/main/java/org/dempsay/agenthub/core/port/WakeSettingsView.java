@@ -11,7 +11,7 @@ package org.dempsay.agenthub.core.port;
  * @param wakeUrlHost host of the stored URL, or null when none is stored
  * @param wakeHeaderName header that will carry the secret
  * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
- * @since 1.1.0
+ * @since 1.0.0
  */
 public record WakeSettingsView(
         String agentId,

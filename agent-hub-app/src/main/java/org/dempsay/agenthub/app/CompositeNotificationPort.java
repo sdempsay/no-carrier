@@ -12,7 +12,7 @@ import org.dempsay.agenthub.core.port.PostedMessage;
  * message post.
  *
  * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
- * @since 1.1.0
+ * @since 1.0.0
  */
 public final class CompositeNotificationPort implements NotificationPort {
     private final List<NotificationPort> ports;

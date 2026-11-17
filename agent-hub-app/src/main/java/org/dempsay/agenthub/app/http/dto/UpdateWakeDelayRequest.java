@@ -7,7 +7,7 @@ import com.google.gson.annotations.SerializedName;
  *
  * @param wakeDelaySeconds seconds to wait, 0 through 300; 0 sends on the next scheduler turn
  * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
- * @since 1.1.0
+ * @since 1.0.0
  */
 public record UpdateWakeDelayRequest(@SerializedName("wakeDelaySeconds") Integer wakeDelaySeconds) {
 }

@@ -27,6 +27,8 @@ import com.sun.net.httpserver.HttpServer;
 
 import org.dempsay.agenthub.app.config.AppConfig;
 import org.dempsay.agenthub.core.port.WakeCredentials;
+import org.dempsay.utils.exceptional.api.ExceptionalResource;
+import org.dempsay.utils.exceptional.api.ExceptionalSupplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,7 +38,6 @@ import org.junit.jupiter.api.Test;
  * and the secret must not appear in any board response.
  *
  * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
- * @since 1.1.0
  */
 class WakePingTest {
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
@@ -50,21 +51,35 @@ class WakePingTest {
     private final List<Hit> hits = new CopyOnWriteArrayList<>();
 
     @BeforeEach
-    void setUp() throws IOException {
-        runtime = HubRuntime.start(AppConfig.inMemoryForTests(0));
+    void setUp() {
+        final var started = ExceptionalSupplier.of(() -> HubRuntime.start(AppConfig.inMemoryForTests(0))).execute();
+        assertTrue(started.wasNoError());
+        runtime = started.response();
         client = HttpClient.newBuilder().connectTimeout(TIMEOUT).build();
         base = "http://127.0.0.1:" + runtime.port();
         adminKey = runtime.bootstrapAdminKey();
         assertNotNull(adminKey);
-        stub = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        stub.createContext("/wake", exchange -> {
-            final var body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            hits.add(new Hit(exchange.getRequestMethod(), body, exchange.getRequestHeaders().getFirst("X-Agent-Hub-Wake-Key"),
-                    exchange.getRequestHeaders().getFirst("X-Test-Wake")));
-            exchange.sendResponseHeaders(204, -1);
-            exchange.close();
-        });
-        stub.start();
+        final var opened = ExceptionalSupplier.of(() -> {
+            final var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            server.createContext("/wake", exchange -> {
+                final var handled = ExceptionalSupplier.of(() -> {
+                    final var body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                    hits.add(new Hit(
+                            exchange.getRequestMethod(),
+                            body,
+                            exchange.getRequestHeaders().getFirst("X-Agent-Hub-Wake-Key"),
+                            exchange.getRequestHeaders().getFirst("X-Test-Wake")));
+                    exchange.sendResponseHeaders(204, -1);
+                    exchange.close();
+                    return Boolean.TRUE;
+                }).execute();
+                assertTrue(handled.wasNoError());
+            });
+            server.start();
+            return server;
+        }).execute();
+        assertTrue(opened.wasNoError());
+        stub = opened.response();
     }
 
     @AfterEach
@@ -78,7 +93,7 @@ class WakePingTest {
     }
 
     @Test
-    void homeChannelAndThreadRepliesPingAndIrrelevantMessagesDoNot() throws Exception {
+    void homeChannelAndThreadRepliesPingAndIrrelevantMessagesDoNot() {
         final var peyton = register("peyton");
         final var nanobot = register("nanobot");
         createChannel("peyton");
@@ -87,7 +102,7 @@ class WakePingTest {
         setWake(peyton.id(), stubUrl(), SECRET, null);
 
         postMessage("general", "nothing to see", nanobot.key(), null);
-        Thread.sleep(600);
+        pause(600);
         assertEquals(0, hits.size(), "a post outside the home channel and outside a thread they joined does not ping");
 
         postMessage("peyton", "hello peyton", nanobot.key(), null);
@@ -98,26 +113,26 @@ class WakePingTest {
         assertEquals(SECRET, hits.get(0).defaultHeader());
 
         final var root = postMessage("general", "peyton starts a thread", peyton.key(), null);
-        Thread.sleep(400);
+        pause(400);
         assertEquals(1, hits.size(), "the author is not pinged for their own message");
 
         postMessage("general", "reply in peyton's thread", nanobot.key(), root);
         assertEquals(2, awaitCount(2, 2_000), "a reply in a thread the agent started pings them");
 
         final var otherRoot = postMessage("general", "someone else's topic", nanobot.key(), null);
-        Thread.sleep(400);
+        pause(400);
         assertEquals(2, hits.size(), "a reply target the agent has not touched does not ping");
         postMessage("general", "still not peyton's thread", nanobot.key(), otherRoot);
-        Thread.sleep(400);
+        pause(400);
         assertEquals(2, hits.size());
 
         postMessage("peyton", "peyton talking to themselves", peyton.key(), null);
-        Thread.sleep(400);
+        pause(400);
         assertEquals(2, hits.size(), "a home-channel post by the agent does not ping that agent");
     }
 
     @Test
-    void aBurstProducesOnePingAndDelayZeroSendsWithoutWaiting() throws Exception {
+    void aBurstProducesOnePingAndDelayZeroSendsWithoutWaiting() {
         final var peyton = register("peyton");
         final var nanobot = register("nanobot");
         createChannel("peyton");
@@ -137,7 +152,7 @@ class WakePingTest {
         final var postingMillis = (System.nanoTime() - started) / 1_000_000L;
         assertTrue(postingMillis < 1_000, "scheduling the ping must not wait out the delay; took " + postingMillis + "ms");
         assertEquals(1, awaitCount(1, 3_000));
-        Thread.sleep(400);
+        pause(400);
         assertEquals(1, hits.size(), "messages inside the delay add no extra pings");
 
         hits.clear();
@@ -151,7 +166,7 @@ class WakePingTest {
     }
 
     @Test
-    void theSecretNeverAppearsInResponsesAndIsSentOnlyOnThePing() throws Exception {
+    void theSecretNeverAppearsInResponsesAndIsSentOnlyOnThePing() {
         final var peyton = register("peyton");
         final var nanobot = register("nanobot");
         createChannel("peyton");
@@ -179,7 +194,7 @@ class WakePingTest {
         final var previous = WakePinger.LOG.getLevel();
         WakePinger.LOG.setLevel(Level.ALL);
         WakePinger.LOG.addHandler(handler);
-        try {
+        final var exercised = ExceptionalSupplier.of(() -> {
             bodies.add(setWake(peyton.id(), stubUrl(), SECRET, "X-Test-Wake").body());
             bodies.add(get("/api/v1/agents/" + peyton.id() + "/wake", adminKey).body());
             bodies.add(put("/api/v1/agents/" + peyton.id() + "/wake",
@@ -193,10 +208,12 @@ class WakePingTest {
             assertEquals(1, awaitCount(1, 2_000));
             bodies.add(post("/api/v1/agents/" + peyton.id() + "/wake/test", "{}", adminKey).body());
             bodies.add(get("/api/v1/settings/wake", adminKey).body());
-        } finally {
+            return Boolean.TRUE;
+        }).always(() -> {
             WakePinger.LOG.removeHandler(handler);
             WakePinger.LOG.setLevel(previous);
-        }
+        }).execute();
+        assertTrue(exercised.wasNoError());
 
         for (final var body : bodies) {
             assertFalse(body.contains(SECRET), body);
@@ -216,15 +233,15 @@ class WakePingTest {
     }
 
     @Test
-    void anUnreachableWakeUrlDoesNotFailOrBlockThePost() throws Exception {
+    void anUnreachableWakeUrlDoesNotFailOrBlockThePost() {
         final var peyton = register("peyton");
         final var nanobot = register("nanobot");
         createChannel("peyton");
         setDelay(0);
-        final int closedPort;
-        try (var socket = new ServerSocket(0)) {
-            closedPort = socket.getLocalPort();
-        }
+        final var opened = ExceptionalResource.<ServerSocket, Integer>of(
+                () -> new ServerSocket(0), ServerSocket::getLocalPort).execute();
+        assertTrue(opened.wasNoError());
+        final int closedPort = opened.response().intValue();
         setWake(peyton.id(), "http://127.0.0.1:" + closedPort + "/wake", SECRET, null);
 
         final var started = System.nanoTime();
@@ -242,7 +259,7 @@ class WakePingTest {
     }
 
     @Test
-    void onlyAnAdministratorCanChangeWakeSettings() throws Exception {
+    void onlyAnAdministratorCanChangeWakeSettings() {
         final var peyton = register("peyton");
         final var body = "{\"wakeUrl\":\"" + stubUrl() + "\",\"wakeKey\":\"" + SECRET + "\"}";
         for (final var call : List.of(
@@ -289,13 +306,13 @@ class WakePingTest {
         return "http://127.0.0.1:" + stub.getAddress().getPort() + "/wake";
     }
 
-    private void setDelay(final int seconds) throws Exception {
+    private void setDelay(final int seconds) {
         final var response = put("/api/v1/settings/wake", "{\"wakeDelaySeconds\":" + seconds + "}", adminKey);
         assertEquals(200, response.statusCode(), response.body());
     }
 
-    private HttpResponse<String> setWake(final String agentId, final String url, final String secret, final String header)
-            throws Exception {
+    private HttpResponse<String> setWake(final String agentId, final String url, final String secret,
+            final String header) {
         final var payload = new StringBuilder("{\"wakeUrl\":\"").append(url).append("\"");
         if (secret != null) {
             payload.append(",\"wakeKey\":\"").append(secret).append("\"");
@@ -309,8 +326,7 @@ class WakePingTest {
         return response;
     }
 
-    private String postMessage(final String channel, final String body, final String key, final String parent)
-            throws Exception {
+    private String postMessage(final String channel, final String body, final String key, final String parent) {
         final var payload = parent == null
                 ? "{\"body\":\"" + body + "\"}"
                 : "{\"body\":\"" + body + "\",\"parentMessageId\":\"" + parent + "\"}";
@@ -319,51 +335,61 @@ class WakePingTest {
         return json(response).get("id").getAsString();
     }
 
-    private Agent register(final String name) throws Exception {
+    private Agent register(final String name) {
         final var response = post("/api/v1/agents", "{\"name\":\"" + name + "\",\"kind\":\"automated\"}", adminKey);
         assertEquals(201, response.statusCode(), response.body());
         final var body = json(response);
         return new Agent(body.getAsJsonObject("agent").get("id").getAsString(), body.get("apiKey").getAsString());
     }
 
-    private void createChannel(final String slug) throws Exception {
+    private void createChannel(final String slug) {
         final var response = post("/api/v1/channels", "{\"slug\":\"" + slug + "\",\"name\":\"" + slug + "\"}", adminKey);
         assertEquals(201, response.statusCode(), response.body());
     }
 
-    private int awaitCount(final int expected, final long timeoutMs) throws InterruptedException {
+    private int awaitCount(final int expected, final long timeoutMs) {
         final var deadline = System.nanoTime() + timeoutMs * 1_000_000L;
         while (System.nanoTime() < deadline) {
             if (hits.size() >= expected) {
                 return hits.size();
             }
-            Thread.sleep(20);
+            pause(20);
         }
         return hits.size();
     }
 
-    private HttpResponse<String> get(final String path, final String key) throws Exception {
+    private void pause(final long millis) {
+        final var slept = ExceptionalSupplier.of(() -> {
+            Thread.sleep(millis);
+            return Boolean.TRUE;
+        }).execute();
+        assertTrue(slept.wasNoError());
+    }
+
+    private HttpResponse<String> get(final String path, final String key) {
         final var builder = HttpRequest.newBuilder(URI.create(base + path)).GET().timeout(TIMEOUT);
         if (key != null) {
             builder.header("Authorization", "Bearer " + key);
         }
-        return client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+        final var response = ExceptionalSupplier.of(() ->
+                client.send(builder.build(), HttpResponse.BodyHandlers.ofString())).execute();
+        assertTrue(response.wasNoError());
+        return response.response();
     }
 
-    private HttpResponse<String> post(final String path, final String body, final String key) throws Exception {
+    private HttpResponse<String> post(final String path, final String body, final String key) {
         return send("POST", path, body, key);
     }
 
-    private HttpResponse<String> put(final String path, final String body, final String key) throws Exception {
+    private HttpResponse<String> put(final String path, final String body, final String key) {
         return send("PUT", path, body, key);
     }
 
-    private HttpResponse<String> delete(final String path, final String key) throws Exception {
+    private HttpResponse<String> delete(final String path, final String key) {
         return send("DELETE", path, null, key);
     }
 
-    private HttpResponse<String> send(final String method, final String path, final String body, final String key)
-            throws Exception {
+    private HttpResponse<String> send(final String method, final String path, final String body, final String key) {
         final var builder = HttpRequest.newBuilder(URI.create(base + path)).timeout(TIMEOUT)
                 .header("Authorization", "Bearer " + key);
         if (body == null) {
@@ -372,7 +398,10 @@ class WakePingTest {
             builder.header("Content-Type", "application/json")
                     .method(method, HttpRequest.BodyPublishers.ofString(body));
         }
-        return client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+        final var response = ExceptionalSupplier.of(() ->
+                client.send(builder.build(), HttpResponse.BodyHandlers.ofString())).execute();
+        assertTrue(response.wasNoError());
+        return response.response();
     }
 
     private static JsonObject json(final HttpResponse<String> response) {

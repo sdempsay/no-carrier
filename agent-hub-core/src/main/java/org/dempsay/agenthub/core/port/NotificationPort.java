@@ -23,7 +23,7 @@ public interface NotificationPort {
      * not included.
      *
      * @param message stored message, without its body
-     * @since 1.1.0
+     * @since 1.0.0
      */
     default void notifyMessagePosted(final PostedMessage message) {
         notifyMessagePosted(message.channelId());

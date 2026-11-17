@@ -1,9 +1,5 @@
 package org.dempsay.agenthub.mcp;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonParseException;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -12,6 +8,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
+import com.google.gson.JsonParser;
 
 /**
  * Speaks the board's HTTP contract, and only that contract.
@@ -294,11 +295,7 @@ final class BoardClient {
         if (body == null || body.isBlank()) {
             return "";
         }
-        try {
-            return stripSecrets(JsonParser.parseString(body)).toString();
-        } catch (final JsonParseException | IllegalStateException e) {
-            return "unreadable response";
-        }
+        return stripSecrets(JsonParser.parseString(body)).toString();
     }
 
     private URI uri(final String path) {

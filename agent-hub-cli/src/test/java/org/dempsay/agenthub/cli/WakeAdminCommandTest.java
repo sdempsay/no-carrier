@@ -3,6 +3,7 @@ package org.dempsay.agenthub.cli;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -18,13 +19,14 @@ import com.sun.net.httpserver.HttpServer;
 
 import org.dempsay.agenthub.app.HubRuntime;
 import org.dempsay.agenthub.app.config.AppConfig;
+import org.dempsay.utils.exceptional.api.ExceptionalResource;
+import org.dempsay.utils.exceptional.api.ExceptionalSupplier;
 import org.junit.jupiter.api.Test;
 
 /**
  * The wake command talks to a running board and does not print the secret.
  *
  * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
- * @since 1.1.0
  */
 class WakeAdminCommandTest {
     private static final String SECRET = "wk-cli-secret-not-printed";
@@ -35,15 +37,26 @@ class WakeAdminCommandTest {
     private final PrintStream err = new PrintStream(errBytes, true, StandardCharsets.UTF_8);
 
     @Test
-    void setsTheDelayAndAWakeUrlWithoutPrintingTheSecret() throws Exception {
-        final var stub = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        stub.createContext("/wake", exchange -> {
-            exchange.getRequestBody().readAllBytes();
-            exchange.sendResponseHeaders(204, -1);
-            exchange.close();
-        });
-        stub.start();
-        try (var runtime = HubRuntime.start(AppConfig.inMemoryForTests(0))) {
+    void setsTheDelayAndAWakeUrlWithoutPrintingTheSecret() {
+        final var opened = ExceptionalSupplier.of(() -> {
+            final var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            server.createContext("/wake", exchange -> {
+                final var handled = ExceptionalSupplier.of(() -> {
+                    exchange.getRequestBody().readAllBytes();
+                    exchange.sendResponseHeaders(204, -1);
+                    exchange.close();
+                    return Boolean.TRUE;
+                }).execute();
+                assertTrue(handled.wasNoError());
+            });
+            server.start();
+            return server;
+        }).execute();
+        assertTrue(opened.wasNoError());
+        final var stub = opened.response();
+        final var ran = ExceptionalResource.<HubRuntime, Boolean>of(
+                () -> HubRuntime.start(AppConfig.inMemoryForTests(0)),
+                runtime -> {
             final var base = "http://127.0.0.1:" + runtime.port();
             final var adminKey = runtime.bootstrapAdminKey();
             final var agentId = whoAmI(base, adminKey);
@@ -80,14 +93,16 @@ class WakeAdminCommandTest {
             assertEquals(0, cleared.exit(), cleared.err());
             assertTrue(cleared.out().contains("wakeConfigured: false"), cleared.out());
             assertFalse(cleared.out().contains(SECRET));
-        } finally {
-            stub.stop(0);
-        }
+            return Boolean.TRUE;
+                }).always(() -> stub.stop(0)).execute();
+        assertTrue(ran.wasNoError());
     }
 
     @Test
-    void refusesANonAdministrator() throws Exception {
-        try (var runtime = HubRuntime.start(AppConfig.inMemoryForTests(0))) {
+    void refusesANonAdministrator() {
+        final var ran = ExceptionalResource.<HubRuntime, Boolean>of(
+                () -> HubRuntime.start(AppConfig.inMemoryForTests(0)),
+                runtime -> {
             final var base = "http://127.0.0.1:" + runtime.port();
             final var registered = cli("agent", "register", "--name", "peyton", "--base", base,
                     "--key", runtime.bootstrapAdminKey());
@@ -101,17 +116,21 @@ class WakeAdminCommandTest {
             assertTrue(denied.err().contains("FORBIDDEN"), denied.err());
             assertFalse(denied.out().contains(SECRET));
             assertFalse(denied.err().contains(SECRET));
-        }
+            return Boolean.TRUE;
+                }).execute();
+        assertTrue(ran.wasNoError());
     }
 
-    private String whoAmI(final String base, final String key) throws Exception {
+    private String whoAmI(final String base, final String key) {
         final var request = HttpRequest.newBuilder(URI.create(base + "/api/v1/agents/me"))
                 .header("Authorization", "Bearer " + key)
                 .GET()
                 .build();
-        final var response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
-        assertEquals(200, response.statusCode());
-        return JsonParser.parseString(response.body()).getAsJsonObject().get("id").getAsString();
+        final var response = ExceptionalSupplier.of(() ->
+                HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString())).execute();
+        assertTrue(response.wasNoError());
+        assertEquals(200, response.response().statusCode());
+        return JsonParser.parseString(response.response().body()).getAsJsonObject().get("id").getAsString();
     }
 
     private Result cli(final String... args) {
@@ -128,7 +147,7 @@ class WakeAdminCommandTest {
                 return trimmed.substring("API key:".length()).trim();
             }
         }
-        throw new IllegalStateException("no API key in output: " + text);
+        return fail("no API key in output: " + text);
     }
 
     private static String extractAgentId(final String text) {
@@ -138,7 +157,7 @@ class WakeAdminCommandTest {
                 return trimmed.substring("Agent id:".length()).trim();
             }
         }
-        throw new IllegalStateException("no agent id in output: " + text);
+        return fail("no agent id in output: " + text);
     }
 
     private record Result(int exit, String out, String err) {

@@ -16,6 +16,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonParser;
 
 import org.dempsay.agenthub.api.model.AgentDto;
+import org.dempsay.utils.exceptional.api.ExceptionalSupplier;
 import org.dempsay.agenthub.core.HubDefaults;
 import org.dempsay.agenthub.core.WakeRules;
 import org.dempsay.agenthub.core.service.AgentRegistryService;
@@ -32,7 +33,6 @@ import org.junit.jupiter.api.io.TempDir;
  * Wake relevance and the settings that must survive without exposing the secret.
  *
  * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
- * @since 1.1.0
  */
 class WakeSettingsTest {
     private static final String SECRET = "wk-secret-not-in-view";
@@ -119,17 +119,23 @@ class WakeSettingsTest {
     }
 
     @Test
-    void agentDocumentWrittenBeforeWakeFieldsStillLoads(@TempDir final Path root) throws Exception {
+    void agentDocumentWrittenBeforeWakeFieldsStillLoads(@TempDir final Path root) {
         final var created = new AgentRegistryService(new FsAgentDtoStore(root)).create(agent("peyton"));
         assertTrue(created.wasNoError());
         final var id = created.response().metadata().id();
         final var file = root.resolve("AgentDto").resolve(id + ".json");
-        final var document = JsonParser.parseString(Files.readString(file)).getAsJsonObject();
+        final var raw = ExceptionalSupplier.of(() -> Files.readString(file)).execute();
+        assertTrue(raw.wasNoError());
+        final var document = JsonParser.parseString(raw.response()).getAsJsonObject();
         final var resource = document.getAsJsonObject("resource");
         resource.remove("wakeUrl");
         resource.remove("wakeKey");
         resource.remove("wakeHeaderName");
-        Files.writeString(file, new Gson().toJson(document));
+        final var written = ExceptionalSupplier.of(() -> {
+            Files.writeString(file, new Gson().toJson(document));
+            return Boolean.TRUE;
+        }).execute();
+        assertTrue(written.wasNoError());
 
         final var agents = new AgentRegistryService(new FsAgentDtoStore(root));
         final var loaded = agents.get(UUID.fromString(id));

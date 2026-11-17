@@ -12,7 +12,7 @@ import org.dempsay.aether.api.annotations.Singleton;
  *
  * @param wakeDelaySeconds debounce delay in seconds
  * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
- * @since 1.1.0
+ * @since 1.0.0
  */
 @AetherRecord
 @Singleton

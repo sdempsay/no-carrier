@@ -12,7 +12,7 @@ import org.dempsay.agenthub.api.model.HubSettingsDtoStore;
  * by hand for tests and {@code --in-memory}.
  *
  * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
- * @since 1.1.0
+ * @since 1.0.0
  */
 public final class MemoryHubSettingsDtoStore extends InMemoryAetherSingletonStore<HubSettingsDto>
         implements HubSettingsDtoStore {

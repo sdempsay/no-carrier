@@ -8,8 +8,10 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
+
+import org.dempsay.utils.exceptional.api.ExceptionalResponse;
+import org.dempsay.utils.exceptional.api.ExceptionalSupplier;
 
 /**
  * Minimal client for the board's HTTP API.
@@ -88,11 +90,11 @@ final class BoardClient {
      *
      * @param adminKey administrator key
      * @param agentId agent id
-     * @return configured flag, host, and header name
-     * @throws IOException if the board refuses or cannot be reached
+     * @return the answer, or a failure when the board cannot be reached
+     * @since 1.0.0
      */
-    WakeView showWake(final String adminKey, final String agentId) throws IOException {
-        return wakeView(send("GET", "/api/v1/agents/" + agentId + "/wake", adminKey, null));
+    ExceptionalResponse<HttpJson> showWake(final String adminKey, final String agentId) {
+        return exchange("GET", "/api/v1/agents/" + agentId + "/wake", adminKey, null);
     }
 
     /**
@@ -103,11 +105,11 @@ final class BoardClient {
      * @param wakeUrl http or https URL
      * @param wakeKey secret, or null to leave the stored secret
      * @param headerName header name, or null to leave the stored name
-     * @return the safe view
-     * @throws IOException if the board refuses or cannot be reached
+     * @return the answer, or a failure when the board cannot be reached
+     * @since 1.0.0
      */
-    WakeView setWake(final String adminKey, final String agentId, final String wakeUrl, final String wakeKey,
-            final String headerName) throws IOException {
+    ExceptionalResponse<HttpJson> setWake(final String adminKey, final String agentId, final String wakeUrl,
+            final String wakeKey, final String headerName) {
         final var payload = new JsonObject();
         payload.addProperty("wakeUrl", wakeUrl);
         if (wakeKey != null) {
@@ -116,7 +118,7 @@ final class BoardClient {
         if (headerName != null) {
             payload.addProperty("wakeHeaderName", headerName);
         }
-        return wakeView(send("PUT", "/api/v1/agents/" + agentId + "/wake", adminKey, payload.toString()));
+        return exchange("PUT", "/api/v1/agents/" + agentId + "/wake", adminKey, payload.toString());
     }
 
     /**
@@ -124,22 +126,22 @@ final class BoardClient {
      *
      * @param adminKey administrator key
      * @param agentId agent id
-     * @return the safe view
-     * @throws IOException if the board refuses or cannot be reached
+     * @return the answer, or a failure when the board cannot be reached
+     * @since 1.0.0
      */
-    WakeView clearWake(final String adminKey, final String agentId) throws IOException {
-        return wakeView(send("DELETE", "/api/v1/agents/" + agentId + "/wake", adminKey, null));
+    ExceptionalResponse<HttpJson> clearWake(final String adminKey, final String agentId) {
+        return exchange("DELETE", "/api/v1/agents/" + agentId + "/wake", adminKey, null);
     }
 
     /**
      * Reads the board-wide wake delay.
      *
      * @param adminKey administrator key
-     * @return delay in seconds
-     * @throws IOException if the board refuses or cannot be reached
+     * @return the answer, or a failure when the board cannot be reached
+     * @since 1.0.0
      */
-    int wakeDelay(final String adminKey) throws IOException {
-        return send("GET", "/api/v1/settings/wake", adminKey, null).get("wakeDelaySeconds").getAsInt();
+    ExceptionalResponse<HttpJson> wakeDelay(final String adminKey) {
+        return exchange("GET", "/api/v1/settings/wake", adminKey, null);
     }
 
     /**
@@ -147,13 +149,13 @@ final class BoardClient {
      *
      * @param adminKey administrator key
      * @param seconds 0 through 300
-     * @return the stored delay
-     * @throws IOException if the board refuses or cannot be reached
+     * @return the answer, or a failure when the board cannot be reached
+     * @since 1.0.0
      */
-    int setWakeDelay(final String adminKey, final int seconds) throws IOException {
+    ExceptionalResponse<HttpJson> setWakeDelay(final String adminKey, final int seconds) {
         final var payload = new JsonObject();
         payload.addProperty("wakeDelaySeconds", seconds);
-        return send("PUT", "/api/v1/settings/wake", adminKey, payload.toString()).get("wakeDelaySeconds").getAsInt();
+        return exchange("PUT", "/api/v1/settings/wake", adminKey, payload.toString());
     }
 
     /**
@@ -161,18 +163,21 @@ final class BoardClient {
      *
      * @param adminKey administrator key
      * @param agentId agent id
-     * @return the remote status, or an error string when the remote did not answer
-     * @throws IOException if the board refuses or cannot be reached
+     * @return the answer, or a failure when the board cannot be reached
+     * @since 1.0.0
      */
-    WakeTest testWake(final String adminKey, final String agentId) throws IOException {
-        final var body = send("POST", "/api/v1/agents/" + agentId + "/wake/test", adminKey, "{}");
-        final Integer status = body.has("statusCode") && !body.get("statusCode").isJsonNull()
-                ? body.get("statusCode").getAsInt()
-                : null;
-        final String error = body.has("error") && !body.get("error").isJsonNull()
-                ? body.get("error").getAsString()
-                : null;
-        return new WakeTest(status, error);
+    ExceptionalResponse<HttpJson> testWake(final String adminKey, final String agentId) {
+        return exchange("POST", "/api/v1/agents/" + agentId + "/wake/test", adminKey, "{}");
+    }
+
+    /**
+     * One JSON answer from the board, including error statuses.
+     *
+     * @param status HTTP status
+     * @param body parsed body, with {@code wakeKey} removed
+     * @since 1.0.0
+     */
+    record HttpJson(int status, JsonObject body) {
     }
 
     /**
@@ -186,15 +191,6 @@ final class BoardClient {
     }
 
     /**
-     * Result of an administrator test ping.
-     *
-     * @param statusCode status from the wake URL, or null
-     * @param error redacted error, or null
-     */
-    record WakeTest(Integer statusCode, String error) {
-    }
-
-    /**
      * What the board issued for a newly created agent.
      *
      * @param agentId the agent's metadata id, needed to address its own status and
@@ -204,8 +200,8 @@ final class BoardClient {
     record CreatedAgent(String agentId, String apiKey) {
     }
 
-    private JsonObject send(final String method, final String path, final String adminKey, final String json)
-            throws IOException {
+    private ExceptionalResponse<HttpJson> exchange(final String method, final String path, final String adminKey,
+            final String json) {
         final var builder = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + path))
                 .timeout(TIMEOUT)
@@ -216,22 +212,22 @@ final class BoardClient {
             builder.header("Content-Type", "application/json")
                     .method(method, HttpRequest.BodyPublishers.ofString(json));
         }
-        final HttpResponse<String> response;
-        try {
-            response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
-        } catch (final InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Interrupted while contacting the board", e);
+        final ExceptionalResponse<HttpResponse<String>> response = ExceptionalSupplier.of(() ->
+                client.send(builder.build(), HttpResponse.BodyHandlers.ofString())).execute();
+        if (response.wasError()) {
+            return ExceptionalResponse.failure();
         }
-        if (response.statusCode() >= 400) {
-            throw new IOException(describeError(response.statusCode(), response.body()));
+        final var http = response.response();
+        final ExceptionalResponse<JsonObject> parsed = ExceptionalSupplier.of(() ->
+                JsonParser.parseString(http.body()).getAsJsonObject()).execute();
+        if (parsed.wasError()) {
+            return ExceptionalResponse.failure();
         }
-        final var parsed = JsonParser.parseString(response.body()).getAsJsonObject();
-        parsed.remove("wakeKey");
-        return parsed;
+        parsed.response().remove("wakeKey");
+        return ExceptionalResponse.success(new HttpJson(http.statusCode(), parsed.response()));
     }
 
-    private static WakeView wakeView(final JsonObject body) {
+    static WakeView wakeView(final JsonObject body) {
         final var host = body.has("wakeUrlHost") && !body.get("wakeUrlHost").isJsonNull()
                 ? body.get("wakeUrlHost").getAsString()
                 : null;
@@ -242,21 +238,15 @@ final class BoardClient {
         return new WakeView(configured, host, header);
     }
 
-    private static String describeError(final int status, final String body) {
-        if (body == null || body.isBlank()) {
-            return "HTTP " + status;
-        }
-        try {
-            final var json = JsonParser.parseString(body).getAsJsonObject();
-            json.remove("wakeKey");
-            final var code = json.has("code") ? json.get("code").getAsString() : "HTTP " + status;
-            final var message = json.has("message") && !json.get("message").isJsonNull()
-                    ? json.get("message").getAsString()
-                    : "";
-            return message.isBlank() ? code : code + ": " + message;
-        } catch (final JsonParseException | IllegalStateException e) {
-            return "HTTP " + status;
-        }
+    static String describe(final HttpJson http) {
+        final var json = http.body();
+        final var code = json.has("code") && !json.get("code").isJsonNull()
+                ? json.get("code").getAsString()
+                : "HTTP " + http.status();
+        final var message = json.has("message") && !json.get("message").isJsonNull()
+                ? json.get("message").getAsString()
+                : "";
+        return message.isBlank() ? code : code + ": " + message;
     }
 
     private static String describe(final String body) {

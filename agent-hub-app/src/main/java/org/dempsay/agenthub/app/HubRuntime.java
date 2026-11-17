@@ -38,6 +38,7 @@ public final class HubRuntime implements AutoCloseable {
      * @throws IOException if the socket cannot be bound
      */
     public static HubRuntime start(final AppConfig config) throws IOException {
+        final HttpAdapter http = new HttpAdapter(config.port(), config.bindAddress());
         final var wakeups = new ChannelWakeups();
         final var pinger = new WakePinger();
         final var notifier = new AgentWakeNotifier(pinger);
@@ -52,17 +53,11 @@ public final class HubRuntime implements AutoCloseable {
             adminKey = UUID.randomUUID().toString().replace("-", "");
             if (graph.bootstrap().initializeAdmin(BootstrapCredentialService.ADMIN_NAME, adminKey).wasError()) {
                 pinger.close();
+                http.close();
                 throw new IllegalStateException("Unable to bootstrap the administrator credential");
             }
         }
 
-        final HttpAdapter http;
-        try {
-            http = new HttpAdapter(config.port(), config.bindAddress());
-        } catch (final IOException e) {
-            pinger.close();
-            throw e;
-        }
         new ApiRoutes(http, graph, config.maxMessageSize(), wakeups, pinger).register();
         http.start();
         return new HubRuntime(config, http, adminKey, pinger);

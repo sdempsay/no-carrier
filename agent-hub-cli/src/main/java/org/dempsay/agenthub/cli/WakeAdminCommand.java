@@ -1,7 +1,10 @@
 package org.dempsay.agenthub.cli;
 
-import java.io.IOException;
 import java.io.PrintStream;
+import java.util.Objects;
+
+import org.dempsay.utils.exceptional.api.ExceptionalResponse;
+import org.dempsay.utils.exceptional.api.ExceptionalSupplier;
 
 /**
  * Sets and inspects wake pings on a running board.
@@ -10,7 +13,7 @@ import java.io.PrintStream;
  * board's answer unexpectedly contains it.
  *
  * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
- * @since 1.1.0
+ * @since 1.0.0
  */
 final class WakeAdminCommand {
     private final PrintStream out;
@@ -43,109 +46,119 @@ final class WakeAdminCommand {
     private int show(final String[] args) {
         final var agent = agent(args);
         final var key = adminKey(args);
-        if (agent == null || key == null) {
+        if (Objects.isNull(agent) || Objects.isNull(key)) {
             return 2;
         }
-        try {
-            printView(new BoardClient(base(args)).showWake(key, agent));
-            return 0;
-        } catch (final IOException e) {
-            return refused(e);
-        }
+        return finishView(new BoardClient(base(args)).showWake(key, agent));
     }
 
     private int set(final String[] args) {
         final var agent = agent(args);
         final var key = adminKey(args);
         final var url = option(args, "--url");
-        if (agent == null || key == null) {
+        if (Objects.isNull(agent) || Objects.isNull(key)) {
             return 2;
         }
-        if (url == null || url.isBlank()) {
+        if (Objects.isNull(url) || url.isBlank()) {
             err.println("agent-hub: --url is required");
             return 2;
         }
-        try {
-            printView(new BoardClient(base(args)).setWake(key, agent, url.trim(), option(args, "--wake-key"),
-                    option(args, "--header")));
-            return 0;
-        } catch (final IOException e) {
-            return refused(e);
-        }
+        return finishView(new BoardClient(base(args)).setWake(key, agent, url.trim(), option(args, "--wake-key"),
+                option(args, "--header")));
     }
 
     private int clear(final String[] args) {
         final var agent = agent(args);
         final var key = adminKey(args);
-        if (agent == null || key == null) {
+        if (Objects.isNull(agent) || Objects.isNull(key)) {
             return 2;
         }
-        try {
-            printView(new BoardClient(base(args)).clearWake(key, agent));
-            return 0;
-        } catch (final IOException e) {
-            return refused(e);
-        }
+        return finishView(new BoardClient(base(args)).clearWake(key, agent));
     }
 
     private int delay(final String[] args) {
         final var key = adminKey(args);
-        if (key == null) {
+        if (Objects.isNull(key)) {
             return 2;
         }
-        final var secondsText = option(args, "--seconds");
-        try {
-            final var client = new BoardClient(base(args));
-            final int seconds = secondsText == null
-                    ? client.wakeDelay(key)
-                    : client.setWakeDelay(key, Integer.parseInt(secondsText.trim()));
-            out.println("wakeDelaySeconds: " + seconds);
-            return 0;
-        } catch (final NumberFormatException e) {
-            err.println("agent-hub: --seconds must be an integer from 0 to 300");
-            return 2;
-        } catch (final IOException e) {
-            return refused(e);
+        final var client = new BoardClient(base(args));
+        final ExceptionalResponse<BoardClient.HttpJson> answer;
+        if (Objects.isNull(option(args, "--seconds"))) {
+            answer = client.wakeDelay(key);
+        } else {
+            final var secondsText = option(args, "--seconds").trim();
+            final var parsed = ExceptionalSupplier.of(() -> Integer.valueOf(secondsText)).execute();
+            if (parsed.wasError()) {
+                err.println("agent-hub: --seconds must be an integer from 0 to 300");
+                return 2;
+            }
+            answer = client.setWakeDelay(key, parsed.response().intValue());
         }
+        if (answer.wasError()) {
+            err.println("agent-hub: could not reach the board");
+            return 1;
+        }
+        if (answer.response().status() >= 400) {
+            err.println("agent-hub: " + BoardClient.describe(answer.response()));
+            return 1;
+        }
+        out.println("wakeDelaySeconds: " + answer.response().body().get("wakeDelaySeconds").getAsInt());
+        return 0;
     }
 
     private int test(final String[] args) {
         final var agent = agent(args);
         final var key = adminKey(args);
-        if (agent == null || key == null) {
+        if (Objects.isNull(agent) || Objects.isNull(key)) {
             return 2;
         }
-        try {
-            final var result = new BoardClient(base(args)).testWake(key, agent);
-            if (result.statusCode() != null) {
-                out.println("statusCode: " + result.statusCode());
-                return 0;
-            }
-            err.println("agent-hub: " + (result.error() == null ? "wake ping failed" : result.error()));
+        final var answer = new BoardClient(base(args)).testWake(key, agent);
+        if (answer.wasError()) {
+            err.println("agent-hub: could not reach the board");
             return 1;
-        } catch (final IOException e) {
-            return refused(e);
         }
+        if (answer.response().status() >= 400) {
+            err.println("agent-hub: " + BoardClient.describe(answer.response()));
+            return 1;
+        }
+        final var body = answer.response().body();
+        if (body.has("statusCode") && !body.get("statusCode").isJsonNull()) {
+            out.println("statusCode: " + body.get("statusCode").getAsInt());
+            return 0;
+        }
+        final var error = body.has("error") && !body.get("error").isJsonNull()
+                ? body.get("error").getAsString()
+                : "wake ping failed";
+        err.println("agent-hub: " + error);
+        return 1;
+    }
+
+    private int finishView(final ExceptionalResponse<BoardClient.HttpJson> answer) {
+        if (answer.wasError()) {
+            err.println("agent-hub: could not reach the board");
+            return 1;
+        }
+        if (answer.response().status() >= 400) {
+            err.println("agent-hub: " + BoardClient.describe(answer.response()));
+            return 1;
+        }
+        printView(BoardClient.wakeView(answer.response().body()));
+        return 0;
     }
 
     private void printView(final BoardClient.WakeView view) {
         out.println("wakeConfigured: " + view.configured());
-        if (view.host() != null) {
+        if (Objects.nonNull(view.host())) {
             out.println("wakeUrlHost: " + view.host());
         }
-        if (view.headerName() != null) {
+        if (Objects.nonNull(view.headerName())) {
             out.println("wakeHeaderName: " + view.headerName());
         }
     }
 
-    private int refused(final IOException error) {
-        err.println("agent-hub: " + error.getMessage());
-        return 1;
-    }
-
     private String agent(final String[] args) {
         final var agent = option(args, "--agent");
-        if (agent == null || agent.isBlank()) {
+        if (Objects.isNull(agent) || agent.isBlank()) {
             err.println("agent-hub: --agent is required");
             return null;
         }
@@ -154,7 +167,7 @@ final class WakeAdminCommand {
 
     private String adminKey(final String[] args) {
         final var key = firstNonBlank(option(args, "--key"), System.getenv(AgentHubCli.KEY_ENV));
-        if (key == null) {
+        if (Objects.isNull(key)) {
             err.println("agent-hub: an administrator key is required");
             err.println("agent-hub: pass --key or set " + AgentHubCli.KEY_ENV);
             return null;

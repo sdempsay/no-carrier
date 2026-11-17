@@ -2,6 +2,8 @@ package org.dempsay.agenthub.app;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 import org.dempsay.aether.api.store.AetherPersisted;
@@ -11,16 +13,16 @@ import org.dempsay.agenthub.core.port.PostedMessage;
 import org.dempsay.agenthub.core.service.MessageCursor;
 import org.dempsay.agenthub.core.service.WakeRelevance;
 import org.dempsay.agenthub.store.HubServiceGraph;
+import org.dempsay.utils.exceptional.api.ExceptionalSupplier;
 
 /**
  * Schedules wake pings after a message is stored.
  *
- * <p>Work here is best-effort. Exceptions are swallowed so a failure to decide
- * who to ping cannot fail the post or the long-poll wake-up that shares the
- * notification port.
+ * <p>Work here is best-effort. A channel id that is not a UUID is ignored so the
+ * post and the long-poll wake-up still succeed.
  *
  * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
- * @since 1.1.0
+ * @since 1.0.0
  */
 public final class AgentWakeNotifier implements NotificationPort {
     private static final int PAGE = 100;
@@ -50,19 +52,18 @@ public final class AgentWakeNotifier implements NotificationPort {
     @Override
     public void notifyMessagePosted(final PostedMessage message) {
         final var graph = services;
-        if (graph == null || message == null || message.deleted()) {
+        if (Objects.isNull(graph) || Objects.isNull(message) || message.deleted()) {
             return;
         }
         consider(graph, message);
     }
 
     private void consider(final HubServiceGraph graph, final PostedMessage message) {
-        final UUID channelId;
-        try {
-            channelId = UUID.fromString(message.channelId());
-        } catch (final IllegalArgumentException e) {
+        final var parsed = ExceptionalSupplier.of(() -> UUID.fromString(message.channelId())).execute();
+        if (parsed.wasError()) {
             return;
         }
+        final UUID channelId = parsed.response();
         final var channel = graph.channels().get(channelId);
         if (channel.wasError()) {
             return;
@@ -77,10 +78,10 @@ public final class AgentWakeNotifier implements NotificationPort {
                 agent.resource().name(),
                 agent.resource().wakeConfigured())));
 
-        final boolean reply = message.parentMessageId() != null && !message.parentMessageId().isBlank();
+        final boolean reply = Objects.nonNull(message.parentMessageId()) && !message.parentMessageId().isBlank();
         final var participants = reply
                 ? participants(graph, message.channelId(), threadRoot(message))
-                : java.util.Set.<String>of();
+                : Set.<String>of();
         final var selected = WakeRelevance.select(
                 message.deleted(),
                 message.authorAgentId(),
@@ -94,7 +95,7 @@ public final class AgentWakeNotifier implements NotificationPort {
     }
 
     private static String threadRoot(final PostedMessage message) {
-        if (message.threadId() != null && !message.threadId().isBlank()) {
+        if (Objects.nonNull(message.threadId()) && !message.threadId().isBlank()) {
             return message.threadId();
         }
         return message.parentMessageId();

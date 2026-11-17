@@ -13,7 +13,7 @@ import org.dempsay.utils.exceptional.api.ExceptionalResponse;
  * response or a log.
  *
  * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
- * @since 1.1.0
+ * @since 1.0.0
  */
 public interface WakeSettingsPort {
     /**

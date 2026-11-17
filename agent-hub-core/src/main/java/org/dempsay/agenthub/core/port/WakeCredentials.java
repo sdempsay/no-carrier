@@ -10,7 +10,7 @@ package org.dempsay.agenthub.core.port;
  * @param headerName header that carries the secret
  * @param key secret, or null when the agent has a URL and no secret
  * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
- * @since 1.1.0
+ * @since 1.0.0
  */
 public record WakeCredentials(String url, String headerName, String key) {
 

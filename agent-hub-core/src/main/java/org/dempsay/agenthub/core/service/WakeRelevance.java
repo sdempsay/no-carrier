@@ -2,8 +2,11 @@ package org.dempsay.agenthub.core.service;
 
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+
+import org.dempsay.utils.exceptional.api.ExceptionalSupplier;
 
 /**
  * Decides which agents should receive a wake ping for one stored message.
@@ -14,7 +17,7 @@ import java.util.UUID;
  * selects nobody.
  *
  * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
- * @since 1.1.0
+ * @since 1.0.0
  */
 public final class WakeRelevance {
     private WakeRelevance() {
@@ -53,13 +56,13 @@ public final class WakeRelevance {
         }
         final var selected = new LinkedHashSet<String>();
         for (final var agent : agents) {
-            if (agent == null || agent.agentId() == null || !agent.wakeConfigured()) {
+            if (Objects.isNull(agent) || Objects.isNull(agent.agentId()) || !agent.wakeConfigured()) {
                 continue;
             }
             if (sameAgent(agent.agentId(), authorAgentId)) {
                 continue;
             }
-            final var home = channelSlug != null && agent.name() != null
+            final var home = Objects.nonNull(channelSlug) && Objects.nonNull(agent.name())
                     && channelSlug.equalsIgnoreCase(agent.name().trim());
             final var participated = reply && containsAgent(participantAgentIds, agent.agentId());
             if (home || participated) {
@@ -87,14 +90,14 @@ public final class WakeRelevance {
             final List<String> threadIds,
             final List<String> authors) {
         final var found = new LinkedHashSet<String>();
-        if (threadRootId == null || threadRootId.isBlank() || messageIds == null) {
+        if (Objects.isNull(threadRootId) || threadRootId.isBlank() || Objects.isNull(messageIds)) {
             return found;
         }
         for (int i = 0; i < messageIds.size(); i++) {
             final var id = messageIds.get(i);
-            final var threadId = threadIds == null || i >= threadIds.size() ? null : threadIds.get(i);
-            final var author = authors == null || i >= authors.size() ? null : authors.get(i);
-            if (author == null || author.isBlank()) {
+            final var threadId = Objects.isNull(threadIds) || i >= threadIds.size() ? null : threadIds.get(i);
+            final var author = Objects.isNull(authors) || i >= authors.size() ? null : authors.get(i);
+            if (Objects.isNull(author) || author.isBlank()) {
                 continue;
             }
             if (threadRootId.equals(id) || threadRootId.equals(threadId)) {
@@ -105,7 +108,7 @@ public final class WakeRelevance {
     }
 
     private static boolean containsAgent(final Set<String> ids, final String agentId) {
-        if (ids == null || ids.isEmpty()) {
+        if (Objects.isNull(ids) || ids.isEmpty()) {
             return false;
         }
         for (final var id : ids) {
@@ -117,16 +120,14 @@ public final class WakeRelevance {
     }
 
     private static boolean sameAgent(final String left, final String right) {
-        if (left == null || right == null) {
+        if (Objects.isNull(left) || Objects.isNull(right)) {
             return false;
         }
         if (left.equals(right)) {
             return true;
         }
-        try {
-            return UUID.fromString(left).equals(UUID.fromString(right));
-        } catch (final IllegalArgumentException e) {
-            return false;
-        }
+        final var parsed = ExceptionalSupplier.of(() ->
+                Boolean.valueOf(UUID.fromString(left).equals(UUID.fromString(right)))).execute();
+        return parsed.wasNoError() && Boolean.TRUE.equals(parsed.response());
     }
 }

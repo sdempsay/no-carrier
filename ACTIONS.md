@@ -257,3 +257,4 @@ Full slice at commit time: 131 tests green on JDK 21, zero checkstyle violations
 - After a stored message, one in-memory timer per agent. Home channel (slug matches the agent name) or a reply in a thread the agent started or posted in. Never the author. No URL and tombstones are skipped. One POST of `{}`, no retries, about a 5s timeout. The post is not blocked and does not fail if the URL is down. Logs name the agent and the status or error, not the secret.
 - Admin HTTP routes, `agent-hub admin wake`, and MCP tools `get_agent_wake`, `set_agent_wake`, `clear_agent_wake`, `get_wake_delay`, `set_wake_delay`, `test_agent_wake`. The secret is not returned.
 - This is not an event log. `endpoint` is still never called.
+- Wake I/O and parsing use `ExceptionalSupplier` / `ExceptionalResource` instead of `try`/`catch`. New public types are `@since 1.0.0` (no `1.0.x` tag yet; the POM is `1.1.0-SNAPSHOT`).

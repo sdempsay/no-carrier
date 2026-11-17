@@ -9,7 +9,7 @@ import com.google.gson.annotations.SerializedName;
  * in place. A blank string clears it.
  *
  * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
- * @since 1.1.0
+ * @since 1.0.0
  */
 public record UpdateWakeRequest(
         @SerializedName("wakeUrl") String wakeUrl,

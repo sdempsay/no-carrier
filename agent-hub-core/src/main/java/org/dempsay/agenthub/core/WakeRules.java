@@ -1,7 +1,11 @@
 package org.dempsay.agenthub.core;
 
 import java.net.URI;
+import java.util.Objects;
 import java.util.regex.Pattern;
+
+import org.dempsay.utils.exceptional.api.ExceptionalResponse;
+import org.dempsay.utils.exceptional.api.ExceptionalSupplier;
 
 /**
  * Validation and display helpers for wake settings.
@@ -10,7 +14,7 @@ import java.util.regex.Pattern;
  * field and is never called.
  *
  * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
- * @since 1.1.0
+ * @since 1.0.0
  */
 public final class WakeRules {
     /** Header used when an agent does not set one. */
@@ -28,28 +32,28 @@ public final class WakeRules {
      *
      * @param wakeUrl candidate URL
      * @return problem text, or null when acceptable
+     * @since 1.0.0
      */
     public static String urlProblem(final String wakeUrl) {
-        if (wakeUrl == null || wakeUrl.isBlank()) {
+        if (Objects.isNull(wakeUrl) || wakeUrl.isBlank()) {
             return "wakeUrl is required";
         }
         if (wakeUrl.trim().length() > MAX_URL_LENGTH) {
             return "wakeUrl is too long";
         }
-        final URI uri;
-        try {
-            uri = URI.create(wakeUrl.trim());
-        } catch (final IllegalArgumentException e) {
+        final ExceptionalResponse<URI> parsed = parse(wakeUrl);
+        if (parsed.wasError()) {
             return "wakeUrl must be an http or https URL";
         }
+        final URI uri = parsed.response();
         final var scheme = uri.getScheme();
-        if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
+        if (Objects.isNull(scheme) || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
             return "wakeUrl must be an http or https URL";
         }
-        if (uri.getHost() == null || uri.getHost().isBlank()) {
+        if (Objects.isNull(uri.getHost()) || uri.getHost().isBlank()) {
             return "wakeUrl must include a host";
         }
-        if (uri.getUserInfo() != null) {
+        if (Objects.nonNull(uri.getUserInfo())) {
             return "wakeUrl must not include user info";
         }
         return null;
@@ -63,9 +67,10 @@ public final class WakeRules {
      *
      * @param wakeKey candidate secret
      * @return problem text, or null when acceptable
+     * @since 1.0.0
      */
     public static String keyProblem(final String wakeKey) {
-        if (wakeKey == null || wakeKey.isEmpty()) {
+        if (Objects.isNull(wakeKey) || wakeKey.isEmpty()) {
             return null;
         }
         if (wakeKey.length() > MAX_KEY_LENGTH) {
@@ -87,9 +92,10 @@ public final class WakeRules {
      *
      * @param wakeHeaderName candidate header name
      * @return problem text, or null when acceptable
+     * @since 1.0.0
      */
     public static String headerProblem(final String wakeHeaderName) {
-        if (wakeHeaderName == null || wakeHeaderName.isBlank()) {
+        if (Objects.isNull(wakeHeaderName) || wakeHeaderName.isBlank()) {
             return null;
         }
         if (!HEADER_NAME.matcher(wakeHeaderName.trim()).matches()) {
@@ -103,17 +109,18 @@ public final class WakeRules {
      *
      * @param wakeUrl stored URL
      * @return host, or null when the URL has none
+     * @since 1.0.0
      */
     public static String host(final String wakeUrl) {
-        if (wakeUrl == null || wakeUrl.isBlank()) {
+        if (Objects.isNull(wakeUrl) || wakeUrl.isBlank()) {
             return null;
         }
-        try {
-            final var host = URI.create(wakeUrl.trim()).getHost();
-            return host == null || host.isBlank() ? null : host;
-        } catch (final IllegalArgumentException e) {
+        final ExceptionalResponse<URI> parsed = parse(wakeUrl);
+        if (parsed.wasError()) {
             return null;
         }
+        final var host = parsed.response().getHost();
+        return Objects.isNull(host) || host.isBlank() ? null : host;
     }
 
     /**
@@ -121,9 +128,10 @@ public final class WakeRules {
      *
      * @param configured stored header name, or null
      * @return the stored name, or {@link #DEFAULT_HEADER}
+     * @since 1.0.0
      */
     public static String effectiveHeader(final String configured) {
-        if (configured == null || configured.isBlank()) {
+        if (Objects.isNull(configured) || configured.isBlank()) {
             return DEFAULT_HEADER;
         }
         return configured.trim();
@@ -134,8 +142,13 @@ public final class WakeRules {
      *
      * @param seconds candidate delay
      * @return true for 0 through {@link HubDefaults#MAX_WAKE_DELAY_SECONDS}
+     * @since 1.0.0
      */
     public static boolean delayAllowed(final int seconds) {
         return seconds >= 0 && seconds <= HubDefaults.MAX_WAKE_DELAY_SECONDS;
+    }
+
+    private static ExceptionalResponse<URI> parse(final String wakeUrl) {
+        return ExceptionalSupplier.of(() -> URI.create(wakeUrl.trim())).execute();
     }
 }

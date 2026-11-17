@@ -67,7 +67,7 @@ public interface AgentRegistryPort {
      * @param wakeKey wake secret, or null to clear
      * @param wakeHeaderName header name, or null for the default
      * @return updated agent, or failure when the agent does not exist
-     * @since 1.1.0
+     * @since 1.0.0
      */
     ExceptionalResponse<AetherPersisted<AgentDto>> updateWake(UUID agentId, String wakeUrl, String wakeKey,
             String wakeHeaderName);

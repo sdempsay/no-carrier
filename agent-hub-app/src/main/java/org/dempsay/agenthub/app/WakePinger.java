@@ -1,15 +1,14 @@
 package org.dempsay.agenthub.app;
 
-import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -17,6 +16,7 @@ import java.util.logging.Logger;
 
 import org.dempsay.agenthub.core.port.WakeCredentials;
 import org.dempsay.agenthub.core.port.WakeSettingsPort;
+import org.dempsay.utils.exceptional.api.ExceptionalSupplier;
 
 /**
  * Sends one HTTP POST per agent, debounced in memory.
@@ -30,7 +30,7 @@ import org.dempsay.agenthub.core.port.WakeSettingsPort;
  * the URL are removed from anything written here.
  *
  * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
- * @since 1.1.0
+ * @since 1.0.0
  */
 public final class WakePinger implements AutoCloseable {
     static final Logger LOG = Logger.getLogger(WakePinger.class.getName());
@@ -67,21 +67,23 @@ public final class WakePinger implements AutoCloseable {
      */
     public void schedule(final String agentId) {
         final var current = settings;
-        if (current == null || agentId == null || agentId.isBlank()) {
+        if (Objects.isNull(current) || Objects.isNull(agentId) || agentId.isBlank()) {
             return;
         }
         final int delay = Math.max(0, current.delaySeconds());
-        try {
+        final var scheduled = ExceptionalSupplier.of(() -> {
             pending.compute(agentId, (id, existing) -> {
-                if (existing != null && !existing.isDone()) {
+                if (Objects.nonNull(existing) && !existing.isDone()) {
                     return existing;
                 }
                 final ScheduledFuture<?>[] holder = new ScheduledFuture<?>[1];
                 holder[0] = scheduler.schedule(() -> fire(id, holder[0]), delay, TimeUnit.SECONDS);
                 return holder[0];
             });
-        } catch (final RejectedExecutionException e) {
-            LOG.warning("wake ping agent=" + agentId + " error=" + e.getClass().getSimpleName());
+            return Boolean.TRUE;
+        }).execute();
+        if (scheduled.wasError()) {
+            LOG.warning("wake ping agent=" + agentId + " error=schedule rejected");
         }
     }
 
@@ -95,15 +97,14 @@ public final class WakePinger implements AutoCloseable {
      */
     public WakePingResult sendNow(final String agentId) {
         final var current = settings;
-        if (current == null) {
+        if (Objects.isNull(current)) {
             return WakePingResult.failed("wake sender is not ready");
         }
-        final UUID id;
-        try {
-            id = UUID.fromString(agentId);
-        } catch (final IllegalArgumentException e) {
+        final var parsed = ExceptionalSupplier.of(() -> UUID.fromString(agentId)).execute();
+        if (parsed.wasError()) {
             return WakePingResult.unconfigured();
         }
+        final UUID id = parsed.response();
         final var credentials = current.credentials(id);
         if (credentials.isEmpty()) {
             return WakePingResult.unconfigured();
@@ -128,22 +129,22 @@ public final class WakePinger implements AutoCloseable {
     }
 
     private WakePingResult post(final WakeCredentials credentials) {
-        try {
+        final Exception[] failure = new Exception[1];
+        final var sent = ExceptionalSupplier.of(() -> {
             final var builder = HttpRequest.newBuilder(URI.create(credentials.url()))
                     .timeout(TIMEOUT)
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString("{}"));
-            if (credentials.key() != null && !credentials.key().isBlank()) {
+            if (Objects.nonNull(credentials.key()) && !credentials.key().isBlank()) {
                 builder.header(credentials.headerName(), credentials.key());
             }
             final var response = http.send(builder.build(), HttpResponse.BodyHandlers.discarding());
-            return WakePingResult.status(response.statusCode());
-        } catch (final InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return WakePingResult.failed(redact(e, credentials));
-        } catch (final IllegalArgumentException | IOException e) {
-            return WakePingResult.failed(redact(e, credentials));
+            return Integer.valueOf(response.statusCode());
+        }).with(error -> failure[0] = error).execute();
+        if (sent.wasError()) {
+            return WakePingResult.failed(redact(failure[0], credentials));
         }
+        return WakePingResult.status(sent.response().intValue());
     }
 
     /**
@@ -154,19 +155,21 @@ public final class WakePinger implements AutoCloseable {
      * @return a short description
      */
     static String redact(final Throwable error, final WakeCredentials credentials) {
-        var detail = error.getClass().getSimpleName();
-        final var message = error.getMessage();
-        if (message != null && !message.isBlank()) {
+        final var detail = new StringBuilder(Objects.isNull(error)
+                ? "wake ping failed"
+                : error.getClass().getSimpleName());
+        final var message = Objects.isNull(error) ? null : error.getMessage();
+        if (Objects.nonNull(message) && !message.isBlank()) {
             var cleaned = message;
-            if (credentials != null && credentials.key() != null && !credentials.key().isBlank()) {
+            if (Objects.nonNull(credentials) && Objects.nonNull(credentials.key()) && !credentials.key().isBlank()) {
                 cleaned = cleaned.replace(credentials.key(), "[redacted]");
             }
-            if (credentials != null && credentials.url() != null && !credentials.url().isBlank()) {
+            if (Objects.nonNull(credentials) && Objects.nonNull(credentials.url()) && !credentials.url().isBlank()) {
                 cleaned = cleaned.replace(credentials.url(), "[url]");
             }
-            detail = detail + ": " + cleaned;
+            detail.append(": ").append(cleaned);
         }
-        return detail;
+        return detail.toString();
     }
 
     /**

@@ -82,7 +82,7 @@ public interface AuthorizationPort {
      *
      * @param principal authenticated caller
      * @return true when the caller may change wake configuration
-     * @since 1.1.0
+     * @since 1.0.0
      */
     boolean canConfigureWake(AuthPrincipal principal);
 }
