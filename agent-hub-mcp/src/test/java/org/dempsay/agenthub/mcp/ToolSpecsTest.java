@@ -24,7 +24,7 @@ class ToolSpecsTest {
         final var names = ToolSpecs.all().stream().map(ToolSpecs.Spec::name).toList();
 
         assertEquals(List.of("whoami", "list_channels", "get_channel", "read_messages", "post_message", "reply",
-                        "set_status"),
+                        "set_status", "create_channel"),
                 names);
     }
 
@@ -109,6 +109,28 @@ class ToolSpecsTest {
     @Test
     void readingAdviceMentionsTheCursorBecausePagingIsTheUsualCase() {
         assertTrue(specNamed("read_messages").description().contains("cursor"));
+    }
+
+    @Test
+    void createChannelSaysAnAdministratorKeyIsRequired() {
+        final var description = specNamed("create_channel").description();
+
+        assertTrue(description.contains("administrator"),
+                "creating a channel is refused for every other key, so the description must say so");
+        assertTrue(description.contains("FORBIDDEN"),
+                "a non-admin refusal is an answer the agent should recognise");
+        assertTrue(description.contains("CONFLICT"),
+                "a taken slug is an answer the agent should recognise");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void theVisibilityEnumIsExactlyWhatTheBoardAccepts() {
+        final var visibility = (Map<String, Object>) properties(specNamed("create_channel")).get("visibility");
+        final var allowed = (List<String>) visibility.get("enum");
+
+        assertEquals(List.of("public", "private"), allowed,
+                "the board rejects any other visibility, so the enum must not offer one it will not take");
     }
 
     private static ToolSpecs.Spec specNamed(final String name) {

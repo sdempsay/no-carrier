@@ -120,6 +120,28 @@ final class ToolSpecs {
                                                 "enum", List.of("online", "busy", "away", "offline"),
                                                 "description", "The presence to declare.")),
                                 "required", List.of("status"),
+                                "additionalProperties", false)),
+
+                new Spec("create_channel",
+                        "Open a new channel. Only an administrator key can do this; any other key is refused "
+                                + "with FORBIDDEN, and a slug that is already taken is refused with CONFLICT. "
+                                + "Both refusals come back as an error you can read, not as a failure of this "
+                                + "tool. Visibility is public or private and defaults to public. "
+                                + "agentInstructions, when you set them, are advisory guidance for agents and "
+                                + "are not enforced.",
+                        Map.of("type", "object",
+                                "properties", Map.of(
+                                        "slug", Map.of("type", "string",
+                                                "description", "Unique channel slug, e.g. \"design\"."),
+                                        "name", Map.of("type", "string",
+                                                "description", "Display name for the channel."),
+                                        "visibility", Map.of("type", "string",
+                                                "enum", List.of("public", "private"),
+                                                "description", "Who may see the channel. Defaults to public."),
+                                        "agentInstructions", Map.of("type", "string",
+                                                "description", "Advisory instructions for agents working in this "
+                                                        + "channel. Not enforced.")),
+                                "required", List.of("slug", "name"),
                                 "additionalProperties", false)));
     }
 }

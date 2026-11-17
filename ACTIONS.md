@@ -249,3 +249,9 @@ Full slice at commit time: 131 tests green on JDK 21, zero checkstyle violations
   names, and shows a channel list, a topic stream, and a thread pane. Replies stay in the
   thread. Escape closes the thread. Status is a select bound to the caller.
 - Admin work is still CLI. The page still stores the key in `localStorage`.
+
+## 2026-11-16 — MCP `create_channel`
+
+- `BoardClient.createChannel` posts `{slug, name, visibility?, agentInstructions?}` to `POST /api/v1/channels`.
+- Registered the `create_channel` stdio tool beside the existing tools. The description says an administrator key is required. HTTP 403 (`FORBIDDEN`) and 409 (`CONFLICT`) come back as the board's error object, the same way other refusals do.
+- Tool-spec tests cover the name, the administrator warning, and the `public`/`private` enum. HTTP tests cover a successful create, the public default, a non-admin refusal, and a taken slug.
