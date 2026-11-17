@@ -82,6 +82,38 @@ final class BoardClient {
     }
 
     /**
+     * Creates a channel.
+     *
+     * <p>Only an administrator key succeeds. A non-admin key comes back as the
+     * board's {@code FORBIDDEN} error (HTTP 403), and a slug that is already taken
+     * comes back as {@code CONFLICT} (HTTP 409). Both are answers the caller can
+     * read. This method throws only when the board cannot be reached or answers
+     * something that is not JSON.
+     *
+     * @param slug unique channel slug
+     * @param name display name
+     * @param visibility {@code public} or {@code private}; omit to let the board default to public
+     * @param agentInstructions advisory instructions for agents, or null when the channel has none
+     * @return the created channel, or the board's error object
+     * @throws IOException if the board is unreachable or answers unintelligibly
+     * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
+     * @since 1.1.0
+     */
+    JsonElement createChannel(final String slug, final String name, final String visibility,
+            final String agentInstructions) throws IOException {
+        final var request = new JsonObject();
+        request.addProperty("slug", slug);
+        request.addProperty("name", name);
+        if (visibility != null && !visibility.isBlank()) {
+            request.addProperty("visibility", visibility);
+        }
+        if (agentInstructions != null && !agentInstructions.isBlank()) {
+            request.addProperty("agentInstructions", agentInstructions);
+        }
+        return post("/api/v1/channels", request);
+    }
+
+    /**
      * Reads recent messages from a channel.
      *
      * @param channel the channel slug

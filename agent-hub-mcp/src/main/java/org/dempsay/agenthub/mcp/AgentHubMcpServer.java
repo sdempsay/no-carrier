@@ -85,6 +85,12 @@ public final class AgentHubMcpServer {
                                 textArg(request, "messageId"))))
                 .toolCall(tool(json, "set_status"), (exchange, request) -> respond(
                         () -> client.setStatus(identity.agentId(), textArg(request, "status"))))
+                .toolCall(tool(json, "create_channel"), (exchange, request) -> respond(
+                        () -> client.createChannel(
+                                textArg(request, "slug"),
+                                textArg(request, "name"),
+                                optionalTextArg(request, "visibility"),
+                                optionalTextArg(request, "agentInstructions"))))
                 .build();
         LOG.info("agent-hub-mcp stdio MCP ready {} against {}", server, baseUrl);
     }

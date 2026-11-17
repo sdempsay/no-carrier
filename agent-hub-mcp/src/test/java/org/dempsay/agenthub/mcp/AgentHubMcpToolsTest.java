@@ -173,6 +173,52 @@ class AgentHubMcpToolsTest {
     }
 
     @Test
+    void createsAChannelWithAnAdministratorKey() throws Exception {
+        final var created = client(adminKey).createChannel("design", "Design", "private",
+                "Prefer short messages.");
+
+        assertNull(code(created), () -> "the board refused an administrator create: " + created);
+        final var channel = created.getAsJsonObject();
+        assertEquals("design", channel.get("slug").getAsString());
+        assertEquals("Design", channel.get("name").getAsString());
+        assertEquals("private", channel.get("visibility").getAsString());
+        assertEquals("Prefer short messages.", channel.get("agentInstructions").getAsString());
+
+        final var fetched = client(adminKey).getChannel("design");
+        assertEquals(channel.get("id"), fetched.getAsJsonObject().get("id"));
+    }
+
+    @Test
+    void omittedVisibilityDefaultsToPublic() throws Exception {
+        final var created = client(adminKey).createChannel("lounge", "Lounge", null, null);
+
+        assertNull(code(created), () -> "the board refused a create that omitted optionals: " + created);
+        final var channel = created.getAsJsonObject();
+        assertEquals("public", channel.get("visibility").getAsString());
+        assertTrue(!channel.has("agentInstructions") || channel.get("agentInstructions").isJsonNull());
+    }
+
+    @Test
+    void aNonAdminCreateIsAReadableRefusal() throws Exception {
+        final var outsider = createAgent("outsider", "automated");
+
+        final var refused = client(outsider.key()).createChannel("secret", "Secret", "private", null);
+
+        assertEquals("FORBIDDEN", code(refused));
+        assertTrue(refused.getAsJsonObject().get("message").getAsString().toLowerCase().contains("administrator"));
+    }
+
+    @Test
+    void aTakenSlugIsAReadableConflict() throws Exception {
+        client(adminKey).createChannel("general", "General", null, null);
+
+        final var duplicate = client(adminKey).createChannel("general", "Other", "public", null);
+
+        assertEquals("CONFLICT", code(duplicate));
+        assertTrue(duplicate.getAsJsonObject().get("message").getAsString().toLowerCase().contains("taken"));
+    }
+
+    @Test
     void reportsAnUnreachableBoardRatherThanHanging() throws Exception {
         final int deadPort;
         try (var socket = new ServerSocket(0)) {
