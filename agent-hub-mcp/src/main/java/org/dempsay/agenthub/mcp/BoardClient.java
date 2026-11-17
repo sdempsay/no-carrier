@@ -135,6 +135,87 @@ final class BoardClient {
         return put("/api/v1/agents/" + encode(agentId) + "/status", request);
     }
 
+    /**
+     * Reads an agent's wake settings. The secret is stripped if the board includes it.
+     *
+     * @param agentId agent id
+     * @return the safe view, or the board's error object
+     * @throws IOException if the board is unreachable or answers unintelligibly
+     */
+    JsonElement getAgentWake(final String agentId) throws IOException {
+        return get("/api/v1/agents/" + encode(agentId) + "/wake");
+    }
+
+    /**
+     * Stores a wake URL. A null secret or header is omitted so the board keeps the stored value.
+     *
+     * <p>The returned JSON never contains the secret. This method does not log its arguments.
+     *
+     * @param agentId agent id
+     * @param wakeUrl http or https URL
+     * @param wakeKey secret, or null to leave it
+     * @param wakeHeaderName header name, or null to leave it
+     * @return the safe view, or the board's error object
+     * @throws IOException if the board is unreachable or answers unintelligibly
+     */
+    JsonElement setAgentWake(final String agentId, final String wakeUrl, final String wakeKey,
+            final String wakeHeaderName) throws IOException {
+        final var request = new JsonObject();
+        request.addProperty("wakeUrl", wakeUrl);
+        if (wakeKey != null) {
+            request.addProperty("wakeKey", wakeKey);
+        }
+        if (wakeHeaderName != null) {
+            request.addProperty("wakeHeaderName", wakeHeaderName);
+        }
+        return put("/api/v1/agents/" + encode(agentId) + "/wake", request);
+    }
+
+    /**
+     * Clears an agent's wake settings.
+     *
+     * @param agentId agent id
+     * @return the safe view, or the board's error object
+     * @throws IOException if the board is unreachable or answers unintelligibly
+     */
+    JsonElement clearAgentWake(final String agentId) throws IOException {
+        return delete("/api/v1/agents/" + encode(agentId) + "/wake");
+    }
+
+    /**
+     * Reads the board-wide wake delay.
+     *
+     * @return {@code wakeDelaySeconds}, or the board's error object
+     * @throws IOException if the board is unreachable or answers unintelligibly
+     */
+    JsonElement getWakeDelay() throws IOException {
+        return get("/api/v1/settings/wake");
+    }
+
+    /**
+     * Stores the board-wide wake delay.
+     *
+     * @param seconds 0 through 300; 0 sends on the next scheduler turn
+     * @return the stored delay, or the board's error object
+     * @throws IOException if the board is unreachable or answers unintelligibly
+     */
+    JsonElement setWakeDelay(final int seconds) throws IOException {
+        final var request = new JsonObject();
+        request.addProperty("wakeDelaySeconds", seconds);
+        return put("/api/v1/settings/wake", request);
+    }
+
+    /**
+     * Asks the board to POST one wake ping now.
+     *
+     * @param agentId agent id
+     * @return the status code or error, or the board's error object
+     * @throws IOException if the board is unreachable or answers unintelligibly
+     */
+    JsonElement testAgentWake(final String agentId) throws IOException {
+        return post("/api/v1/agents/" + encode(agentId) + "/wake/test", new JsonObject());
+    }
+
     private JsonElement get(final String path) throws IOException {
         return send(HttpRequest.newBuilder(uri(path)).GET());
     }
@@ -149,6 +230,10 @@ final class BoardClient {
         return send(HttpRequest.newBuilder(uri(path))
                 .header("Content-Type", "application/json")
                 .PUT(HttpRequest.BodyPublishers.ofString(body.toString(), StandardCharsets.UTF_8)));
+    }
+
+    private JsonElement delete(final String path) throws IOException {
+        return send(HttpRequest.newBuilder(uri(path)).DELETE());
     }
 
     /**
@@ -172,12 +257,47 @@ final class BoardClient {
             throw new IOException("the board call was interrupted", e);
         }
         if (response.statusCode() >= 500) {
-            throw new IOException("the board answered " + response.statusCode() + ": " + response.body());
+            throw new IOException("the board answered " + response.statusCode() + ": " + stripSecretText(response.body()));
         }
         try {
-            return JsonParser.parseString(response.body());
+            return stripSecrets(JsonParser.parseString(response.body()));
         } catch (final JsonParseException e) {
             throw new IOException("the board's answer was not JSON", e);
+        }
+    }
+
+    /**
+     * Drops {@code wakeKey} from a JSON value before it is handed to a tool result.
+     *
+     * @param value board answer
+     * @return the same value, with secrets removed
+     */
+    private static JsonElement stripSecrets(final JsonElement value) {
+        if (value == null || value.isJsonNull()) {
+            return value;
+        }
+        if (value.isJsonObject()) {
+            final var object = value.getAsJsonObject();
+            object.remove("wakeKey");
+            for (final var entry : object.entrySet()) {
+                stripSecrets(entry.getValue());
+            }
+        } else if (value.isJsonArray()) {
+            for (final var item : value.getAsJsonArray()) {
+                stripSecrets(item);
+            }
+        }
+        return value;
+    }
+
+    private static String stripSecretText(final String body) {
+        if (body == null || body.isBlank()) {
+            return "";
+        }
+        try {
+            return stripSecrets(JsonParser.parseString(body)).toString();
+        } catch (final JsonParseException | IllegalStateException e) {
+            return "unreadable response";
         }
     }
 

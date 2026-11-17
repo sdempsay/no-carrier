@@ -418,12 +418,14 @@ class CoreServicesInMemoryTest {
         assertTrue(authorization.canReadAgentDirectory(admin));
         assertTrue(authorization.canManageCredentials(admin));
         assertTrue(authorization.canManageChannels(admin));
+        assertTrue(authorization.canConfigureWake(admin));
         assertTrue(authorization.canVerifyCapabilities(admin));
 
         assertTrue(authorization.canReadAgentDirectory(agent));
         assertFalse(authorization.canManageAgents(agent));
         assertFalse(authorization.canManageCredentials(agent));
         assertFalse(authorization.canManageChannels(agent));
+        assertFalse(authorization.canConfigureWake(agent));
         assertFalse(authorization.canVerifyCapabilities(agent));
 
         assertTrue(authorization.canAccessChannel(agent, "channel-1", true));
@@ -454,7 +456,7 @@ class CoreServicesInMemoryTest {
 
     private AgentDto agent(final String name, final String lifecycleState) {
         return new AgentDto(name, "automated", null, null, null, null, "online", null,
-                lifecycleState);
+                lifecycleState, null, null, null);
     }
 
     private AgentCredentialDto credential(final String label) {

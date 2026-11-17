@@ -85,6 +85,21 @@ public final class AgentHubMcpServer {
                                 textArg(request, "messageId"))))
                 .toolCall(tool(json, "set_status"), (exchange, request) -> respond(
                         () -> client.setStatus(identity.agentId(), textArg(request, "status"))))
+                .toolCall(tool(json, "get_agent_wake"), (exchange, request) -> respond(
+                        () -> client.getAgentWake(textArg(request, "agentId"))))
+                .toolCall(tool(json, "set_agent_wake"), (exchange, request) -> respond(
+                        () -> client.setAgentWake(
+                                textArg(request, "agentId"),
+                                textArg(request, "wakeUrl"),
+                                optionalTextArg(request, "wakeKey"),
+                                optionalTextArg(request, "wakeHeaderName"))))
+                .toolCall(tool(json, "clear_agent_wake"), (exchange, request) -> respond(
+                        () -> client.clearAgentWake(textArg(request, "agentId"))))
+                .toolCall(tool(json, "get_wake_delay"), (exchange, request) -> respond(client::getWakeDelay))
+                .toolCall(tool(json, "set_wake_delay"), (exchange, request) -> respond(
+                        () -> client.setWakeDelay(intArg(request, "wakeDelaySeconds", -1))))
+                .toolCall(tool(json, "test_agent_wake"), (exchange, request) -> respond(
+                        () -> client.testAgentWake(textArg(request, "agentId"))))
                 .build();
         LOG.info("agent-hub-mcp stdio MCP ready {} against {}", server, baseUrl);
     }

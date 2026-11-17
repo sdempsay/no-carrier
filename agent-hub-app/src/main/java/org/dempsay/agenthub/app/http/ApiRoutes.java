@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -16,6 +17,9 @@ import org.dempsay.agenthub.api.model.AgentDto;
 import org.dempsay.agenthub.api.model.ChannelDto;
 import org.dempsay.agenthub.api.model.MessageDto;
 import org.dempsay.agenthub.app.ChannelWakeups;
+import org.dempsay.agenthub.app.WakePinger;
+import org.dempsay.agenthub.core.HubDefaults;
+import org.dempsay.agenthub.core.WakeRules;
 import org.dempsay.agenthub.store.HubServiceGraph;
 import org.dempsay.agenthub.app.http.dto.ApiAgentDto;
 import org.dempsay.agenthub.app.http.dto.ApiChannelDto;
@@ -25,6 +29,8 @@ import org.dempsay.agenthub.app.http.dto.CreateChannelRequest;
 import org.dempsay.agenthub.app.http.dto.CreateMessageRequest;
 import org.dempsay.agenthub.app.http.dto.UpdateChannelRequest;
 import org.dempsay.agenthub.app.http.dto.UpdateStatusRequest;
+import org.dempsay.agenthub.app.http.dto.UpdateWakeDelayRequest;
+import org.dempsay.agenthub.app.http.dto.UpdateWakeRequest;
 import org.dempsay.aether.api.store.AetherPersisted;
 import org.dempsay.agenthub.core.port.AuthPrincipal;
 import org.dempsay.agenthub.core.service.MessageCursor;
@@ -53,13 +59,15 @@ public final class ApiRoutes {
     private final HubServiceGraph services;
     private final int maxMessageSize;
     private final ChannelWakeups wakeups;
+    private final WakePinger wakePinger;
 
     public ApiRoutes(final HttpAdapter http, final HubServiceGraph services, final int maxMessageSize,
-            final ChannelWakeups wakeups) {
+            final ChannelWakeups wakeups, final WakePinger wakePinger) {
         this.http = http;
         this.services = services;
         this.maxMessageSize = maxMessageSize;
         this.wakeups = wakeups;
+        this.wakePinger = wakePinger;
     }
 
     public void register() {
@@ -73,6 +81,12 @@ public final class ApiRoutes {
         http.post("/api/v1/agents", this::handleCreateAgent);
         http.post("/api/v1/agents/{" + AGENT + "}/heartbeat", this::handleHeartbeat);
         http.put("/api/v1/agents/{" + AGENT + "}/status", this::handleUpdateStatus);
+        http.get("/api/v1/agents/{" + AGENT + "}/wake", this::handleGetWake);
+        http.put("/api/v1/agents/{" + AGENT + "}/wake", this::handlePutWake);
+        http.delete("/api/v1/agents/{" + AGENT + "}/wake", this::handleDeleteWake);
+        http.post("/api/v1/agents/{" + AGENT + "}/wake/test", this::handleTestWake);
+        http.get("/api/v1/settings/wake", this::handleGetWakeDelay);
+        http.put("/api/v1/settings/wake", this::handlePutWakeDelay);
 
         http.get("/api/v1/channels", this::handleListChannels);
         http.post("/api/v1/channels", this::handleCreateChannel);
@@ -210,7 +224,10 @@ public final class ApiRoutes {
                 request.endpoint(),
                 isBlank(request.declaredStatus()) ? "offline" : request.declaredStatus(),
                 null,
-                "active"));
+                "active",
+                null,
+                null,
+                null));
         if (created.wasError()) {
             serverError(context, "Failed to create agent");
             return;
@@ -310,6 +327,167 @@ public final class ApiRoutes {
         }
 
         sendJson(context, 200, toApiAgent(updated.response()));
+    }
+
+    private void handleGetWake(final HttpAdapter.RequestContext context) throws IOException {
+        if (requireWakeAdmin(context) == null) {
+            return;
+        }
+        final var agentId = existingAgent(context);
+        if (agentId == null) {
+            return;
+        }
+        final var view = services.wakeSettings().view(agentId);
+        if (view.wasError()) {
+            notFound(context, "Agent not found");
+            return;
+        }
+        sendJson(context, 200, view.response());
+    }
+
+    private void handlePutWake(final HttpAdapter.RequestContext context) throws IOException {
+        if (requireWakeAdmin(context) == null) {
+            return;
+        }
+        final var agentId = existingAgent(context);
+        if (agentId == null) {
+            return;
+        }
+        final var request = readBody(context, UpdateWakeRequest.class);
+        if (request == null || isBlank(request.wakeUrl())) {
+            validationFailed(context, List.of(new ErrorResponse.Violation("wakeUrl",
+                    "wakeUrl is required; DELETE this resource to clear wake settings")));
+            return;
+        }
+        final var violations = new ArrayList<ErrorResponse.Violation>();
+        final var urlProblem = WakeRules.urlProblem(request.wakeUrl());
+        final var keyProblem = WakeRules.keyProblem(request.wakeKey());
+        final var headerProblem = WakeRules.headerProblem(request.wakeHeaderName());
+        if (urlProblem != null) {
+            violations.add(new ErrorResponse.Violation("wakeUrl", urlProblem));
+        }
+        if (keyProblem != null) {
+            violations.add(new ErrorResponse.Violation("wakeKey", keyProblem));
+        }
+        if (headerProblem != null) {
+            violations.add(new ErrorResponse.Violation("wakeHeaderName", headerProblem));
+        }
+        if (!violations.isEmpty()) {
+            validationFailed(context, violations);
+            return;
+        }
+        final var updated = services.wakeSettings().replace(agentId, request.wakeUrl(), request.wakeKey(),
+                request.wakeHeaderName());
+        if (updated.wasError()) {
+            serverError(context, "Failed to update wake settings");
+            return;
+        }
+        sendJson(context, 200, updated.response());
+    }
+
+    private void handleDeleteWake(final HttpAdapter.RequestContext context) throws IOException {
+        if (requireWakeAdmin(context) == null) {
+            return;
+        }
+        final var agentId = existingAgent(context);
+        if (agentId == null) {
+            return;
+        }
+        final var cleared = services.wakeSettings().clear(agentId);
+        if (cleared.wasError()) {
+            serverError(context, "Failed to clear wake settings");
+            return;
+        }
+        sendJson(context, 200, cleared.response());
+    }
+
+    private void handleTestWake(final HttpAdapter.RequestContext context) throws IOException {
+        if (requireWakeAdmin(context) == null) {
+            return;
+        }
+        final var agentId = existingAgent(context);
+        if (agentId == null) {
+            return;
+        }
+        final var result = wakePinger.sendNow(agentId.toString());
+        if (result.notConfigured()) {
+            validationFailed(context, List.of(new ErrorResponse.Violation("wakeUrl", "wakeUrl is not configured")));
+            return;
+        }
+        if (result.statusCode() != null) {
+            sendJson(context, 200, Map.of("statusCode", result.statusCode()));
+            return;
+        }
+        sendJson(context, 200, Map.of("error", result.error() == null ? "wake ping failed" : result.error()));
+    }
+
+    private void handleGetWakeDelay(final HttpAdapter.RequestContext context) throws IOException {
+        if (requireWakeAdmin(context) == null) {
+            return;
+        }
+        sendJson(context, 200, Map.of("wakeDelaySeconds", services.wakeSettings().delaySeconds()));
+    }
+
+    private void handlePutWakeDelay(final HttpAdapter.RequestContext context) throws IOException {
+        if (requireWakeAdmin(context) == null) {
+            return;
+        }
+        final var request = readBody(context, UpdateWakeDelayRequest.class);
+        if (request == null || request.wakeDelaySeconds() == null) {
+            validationFailed(context, List.of(new ErrorResponse.Violation("wakeDelaySeconds",
+                    "wakeDelaySeconds is required")));
+            return;
+        }
+        final int seconds = request.wakeDelaySeconds();
+        if (!WakeRules.delayAllowed(seconds)) {
+            validationFailed(context, List.of(new ErrorResponse.Violation("wakeDelaySeconds",
+                    "wakeDelaySeconds must be between 0 and " + HubDefaults.MAX_WAKE_DELAY_SECONDS)));
+            return;
+        }
+        final var stored = services.wakeSettings().setDelaySeconds(seconds);
+        if (stored.wasError()) {
+            serverError(context, "Failed to store wakeDelaySeconds");
+            return;
+        }
+        sendJson(context, 200, Map.of("wakeDelaySeconds", stored.response()));
+    }
+
+    /**
+     * Authenticates and requires permission to configure wake pings.
+     *
+     * @param context request
+     * @return the principal, or null when a response has already been written
+     */
+    private AuthPrincipal requireWakeAdmin(final HttpAdapter.RequestContext context) throws IOException {
+        final var principal = authenticate(context);
+        if (principal == null) {
+            return null;
+        }
+        if (!services.authorization().canConfigureWake(principal)) {
+            forbidden(context, "Configuring wake pings requires administrator credentials");
+            return null;
+        }
+        return principal;
+    }
+
+    /**
+     * Resolves a path agent id that exists.
+     *
+     * @param context request
+     * @return the id, or null when a 404 has already been written
+     */
+    private UUID existingAgent(final HttpAdapter.RequestContext context) throws IOException {
+        final var raw = context.pathVariables().get(AGENT);
+        if (!HttpAdapter.isUuid(raw)) {
+            notFound(context, "Agent not found");
+            return null;
+        }
+        final var agentId = UUID.fromString(raw);
+        if (services.agents().get(agentId).wasError()) {
+            notFound(context, "Agent not found");
+            return null;
+        }
+        return agentId;
     }
 
     private void handleListChannels(final HttpAdapter.RequestContext context) throws IOException {

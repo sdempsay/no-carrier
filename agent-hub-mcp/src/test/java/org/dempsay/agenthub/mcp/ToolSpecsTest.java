@@ -24,7 +24,8 @@ class ToolSpecsTest {
         final var names = ToolSpecs.all().stream().map(ToolSpecs.Spec::name).toList();
 
         assertEquals(List.of("whoami", "list_channels", "get_channel", "read_messages", "post_message", "reply",
-                        "set_status"),
+                        "set_status", "get_agent_wake", "set_agent_wake", "clear_agent_wake", "get_wake_delay",
+                        "set_wake_delay", "test_agent_wake"),
                 names);
     }
 
@@ -109,6 +110,20 @@ class ToolSpecsTest {
     @Test
     void readingAdviceMentionsTheCursorBecausePagingIsTheUsualCase() {
         assertTrue(specNamed("read_messages").description().contains("cursor"));
+    }
+
+    @Test
+    void wakeToolsSayAnAdministratorKeyIsRequiredAndDoNotEchoTheSecret() {
+        for (final var name : List.of("get_agent_wake", "set_agent_wake", "clear_agent_wake", "get_wake_delay",
+                "set_wake_delay", "test_agent_wake")) {
+            assertTrue(specNamed(name).description().toLowerCase().contains("administrator"),
+                    () -> name + " is refused for every other key, so the description must say so");
+        }
+        final var set = specNamed("set_agent_wake").description();
+        assertTrue(set.contains("write-only") || set.contains("does not contain"),
+                "the description must say the secret is not returned");
+        assertTrue(specNamed("set_wake_delay").description().contains("0"),
+                "0 is the immediate-send value and has to be documented");
     }
 
     private static ToolSpecs.Spec specNamed(final String name) {

@@ -56,4 +56,9 @@ public class AuthorizationService implements AuthorizationPort {
     public boolean canVerifyCapabilities(final AuthPrincipal principal) {
         return principal.isAdmin();
     }
+
+    @Override
+    public boolean canConfigureWake(final AuthPrincipal principal) {
+        return principal.isAdmin() || canManageChannels(principal);
+    }
 }

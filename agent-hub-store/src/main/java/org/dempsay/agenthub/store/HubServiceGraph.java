@@ -8,6 +8,7 @@ import org.dempsay.agenthub.core.port.ChannelPort;
 import org.dempsay.agenthub.core.port.CredentialServicePort;
 import org.dempsay.agenthub.core.port.MessagePort;
 import org.dempsay.agenthub.core.port.NotificationPort;
+import org.dempsay.agenthub.core.port.WakeSettingsPort;
 
 /**
  * The core service ports wired to a concrete store.
@@ -24,6 +25,7 @@ import org.dempsay.agenthub.core.port.NotificationPort;
  * @param authorization authorization decisions
  * @param notifications wake-up sink handed to the message service
  * @param bootstrap first-start administrator bootstrap
+ * @param wakeSettings per-agent wake URLs and the board-wide debounce delay
  * @author Shawn Dempsay {@literal <shawn@dempsay.org>}
  * @since 1.1.0
  */
@@ -35,5 +37,6 @@ public record HubServiceGraph(
         BearerAuthPort auth,
         AuthorizationPort authorization,
         NotificationPort notifications,
-        BootstrapCredentialPort bootstrap) {
+        BootstrapCredentialPort bootstrap,
+        WakeSettingsPort wakeSettings) {
 }

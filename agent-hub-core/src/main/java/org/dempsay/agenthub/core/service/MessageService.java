@@ -13,6 +13,7 @@ import org.dempsay.agenthub.api.model.MessageDto;
 import org.dempsay.agenthub.api.model.MessageDtoStore;
 import org.dempsay.agenthub.core.port.MessagePort;
 import org.dempsay.agenthub.core.port.NotificationPort;
+import org.dempsay.agenthub.core.port.PostedMessage;
 import org.dempsay.utils.exceptional.api.ExceptionalResponse;
 
 /**
@@ -34,7 +35,7 @@ public class MessageService implements MessagePort {
     public ExceptionalResponse<AetherPersisted<MessageDto>> create(final MessageDto dto) {
         final var response = store.create(e -> { }, AetherPrincipal.system(), dto);
         if (response.wasNoError()) {
-            notifications.notifyMessagePosted(dto.channelId());
+            notifyPosted(response.response());
             return ExceptionalResponse.success(response.response());
         } else {
             return ExceptionalResponse.failure();
@@ -73,11 +74,25 @@ public class MessageService implements MessagePort {
 
         final var response = store.create(e -> { }, AetherPrincipal.system(), replyDto);
         if (response.wasNoError()) {
-            notifications.notifyMessagePosted(dto.channelId());
+            notifyPosted(response.response());
             return ExceptionalResponse.success(response.response());
         } else {
             return ExceptionalResponse.failure();
         }
+    }
+
+    /**
+     * Tells listeners about a stored message. Listeners must not throw; the message is already stored.
+     */
+    private void notifyPosted(final AetherPersisted<MessageDto> persisted) {
+        final var message = persisted.resource();
+        notifications.notifyMessagePosted(new PostedMessage(
+                persisted.metadata().id(),
+                message.channelId(),
+                message.threadId(),
+                message.parentMessageId(),
+                message.authorAgentId(),
+                Boolean.TRUE.equals(message.deleted())));
     }
 
     @Override

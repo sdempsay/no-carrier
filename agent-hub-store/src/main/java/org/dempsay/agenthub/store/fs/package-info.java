@@ -8,6 +8,9 @@
             AgentCredentialDto.class,
             ChannelDto.class,
             MessageDto.class
+        },
+        singletonFilesystem = {
+            HubSettingsDto.class
         })
 package org.dempsay.agenthub.store.fs;
 
@@ -15,4 +18,5 @@ import org.dempsay.aether.store.gen.AetherStoreProviders;
 import org.dempsay.agenthub.api.model.AgentCredentialDto;
 import org.dempsay.agenthub.api.model.AgentDto;
 import org.dempsay.agenthub.api.model.ChannelDto;
+import org.dempsay.agenthub.api.model.HubSettingsDto;
 import org.dempsay.agenthub.api.model.MessageDto;

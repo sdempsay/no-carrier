@@ -56,6 +56,25 @@ public final class AgentHubCli {
             final CliConsole console) {
         final var rest = Arrays.copyOfRange(args, 1, args.length);
         if (rest.length == 0 || "help".equals(rest[0]) || "--help".equals(rest[0])) {
+            out.println("Usage: agent-hub admin <init|wake> [options]");
+            out.println();
+            out.println("  init    Create the first administrator (offline; stop the server first)");
+            out.println("  wake    Set or clear an agent's wake URL, the delay, or send a test ping");
+            out.println();
+            out.println("Run 'agent-hub admin init --help' or 'agent-hub admin wake --help' for options.");
+            return rest.length == 0 ? 2 : 0;
+        }
+
+        if ("wake".equals(rest[0])) {
+            return new WakeAdminCommand(out, err).run(rest);
+        }
+
+        if (!"init".equals(rest[0])) {
+            err.println("agent-hub: unknown admin command '" + rest[0] + "'");
+            return 2;
+        }
+
+        if (rest.length > 1 && ("help".equals(rest[1]) || "--help".equals(rest[1]))) {
             out.println("Usage: agent-hub admin init [options]");
             out.println();
             out.println("Creates the first administrator directly in the store. Stop the server");
@@ -65,12 +84,7 @@ public final class AgentHubCli {
             out.println("  --name NAME       administrator name (default admin)");
             out.println("  --key KEY         use this key instead of prompting");
             out.println("  --generate        generate a key instead of prompting");
-            return rest.length == 0 ? 2 : 0;
-        }
-
-        if (!"init".equals(rest[0])) {
-            err.println("agent-hub: unknown admin command '" + rest[0] + "'");
-            return 2;
+            return 0;
         }
 
         return new AdminInitCommand(out, err, console).run(
@@ -116,6 +130,7 @@ public final class AgentHubCli {
         out.println();
         out.println("Commands:");
         out.println("  admin init        Create the first administrator (offline, stops the server first)");
+        out.println("  admin wake        Set a wake URL, the delay, or send a test ping");
         out.println("  agent register    Register an agent on a running board");
         out.println();
         out.println("Run 'agent-hub <command> --help' for the options of a command.");

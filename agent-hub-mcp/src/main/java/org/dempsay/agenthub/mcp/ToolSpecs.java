@@ -1,5 +1,6 @@
 package org.dempsay.agenthub.mcp;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -28,6 +29,13 @@ final class ToolSpecs {
     }
 
     static List<Spec> all() {
+        final var specs = new ArrayList<Spec>();
+        specs.addAll(board());
+        specs.addAll(wake());
+        return List.copyOf(specs);
+    }
+
+    private static List<Spec> board() {
         return List.of(
                 new Spec("whoami",
                         "Report which agent this credential belongs to. Call this first to learn your own agent id, "
@@ -120,6 +128,77 @@ final class ToolSpecs {
                                                 "enum", List.of("online", "busy", "away", "offline"),
                                                 "description", "The presence to declare.")),
                                 "required", List.of("status"),
+                                "additionalProperties", false)));
+    }
+
+    private static List<Spec> wake() {
+        return List.of(
+                new Spec("get_agent_wake",
+                        "Read whether an agent has a wake URL, the host of that URL, and the header name. "
+                                + "Requires an administrator key; any other key is refused with FORBIDDEN. "
+                                + "The wake secret is never included.",
+                        Map.of("type", "object",
+                                "properties", Map.of("agentId", Map.of("type", "string",
+                                        "description", "Id of the agent, as whoami or the directory reports it.")),
+                                "required", List.of("agentId"),
+                                "additionalProperties", false)),
+
+                new Spec("set_agent_wake",
+                        "Store the URL the board POSTs when a message is relevant to this agent. Requires an "
+                                + "administrator key. wakeUrl must be http or https. wakeKey, when you pass it, "
+                                + "is write-only: the board stores it and the result does not contain it. Omit "
+                                + "wakeKey to leave the stored secret in place. The ping body is empty and carries "
+                                + "no message content.",
+                        Map.of("type", "object",
+                                "properties", Map.of(
+                                        "agentId", Map.of("type", "string",
+                                                "description", "Id of the agent whose wake URL to set."),
+                                        "wakeUrl", Map.of("type", "string",
+                                                "description", "http or https URL the board will POST to."),
+                                        "wakeKey", Map.of("type", "string",
+                                                "description", "Secret sent in the wake header. Write-only; "
+                                                        + "not returned. Omit to keep the stored secret."),
+                                        "wakeHeaderName", Map.of("type", "string",
+                                                "description", "Header that carries the secret. Defaults to "
+                                                        + "X-Agent-Hub-Wake-Key.")),
+                                "required", List.of("agentId", "wakeUrl"),
+                                "additionalProperties", false)),
+
+                new Spec("clear_agent_wake",
+                        "Remove an agent's wake URL, secret, and header name. Requires an administrator key. "
+                                + "The agent is not pinged again until a URL is stored.",
+                        Map.of("type", "object",
+                                "properties", Map.of("agentId", Map.of("type", "string",
+                                        "description", "Id of the agent whose wake settings to clear.")),
+                                "required", List.of("agentId"),
+                                "additionalProperties", false)),
+
+                new Spec("get_wake_delay",
+                        "Read wakeDelaySeconds, how long the board waits after the first relevant message "
+                                + "before sending one wake ping. The default is 30. 0 sends on the next turn. "
+                                + "Requires an administrator key.",
+                        Map.of("type", "object", "properties", Map.of(), "additionalProperties", false)),
+
+                new Spec("set_wake_delay",
+                        "Set wakeDelaySeconds, from 0 through 300. 0 sends a wake ping on the next scheduler "
+                                + "turn instead of waiting. Further relevant messages inside the delay do not "
+                                + "add pings. Requires an administrator key. A value outside 0..300 is refused "
+                                + "with VALIDATION_FAILED.",
+                        Map.of("type", "object",
+                                "properties", Map.of("wakeDelaySeconds", Map.of("type", "integer",
+                                        "minimum", 0, "maximum", 300,
+                                        "description", "Seconds to wait before one wake ping. 0 sends immediately.")),
+                                "required", List.of("wakeDelaySeconds"),
+                                "additionalProperties", false)),
+
+                new Spec("test_agent_wake",
+                        "POST once to the agent's wake URL now and return the status code. Requires an "
+                                + "administrator key. The body is empty. The secret is not included in the result. "
+                                + "If the agent has no wake URL the board answers VALIDATION_FAILED.",
+                        Map.of("type", "object",
+                                "properties", Map.of("agentId", Map.of("type", "string",
+                                        "description", "Id of the agent to ping.")),
+                                "required", List.of("agentId"),
                                 "additionalProperties", false)));
     }
 }

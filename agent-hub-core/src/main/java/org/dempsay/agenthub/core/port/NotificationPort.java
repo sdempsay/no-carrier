@@ -14,4 +14,18 @@ public interface NotificationPort {
      * @param channelId channel metadata id
      */
     void notifyMessagePosted(String channelId);
+
+    /**
+     * Notify that a message was stored, including who wrote it.
+     *
+     * <p>The default keeps existing listeners, which only need the channel, working.
+     * A listener that needs the author or thread overrides this method. The body is
+     * not included.
+     *
+     * @param message stored message, without its body
+     * @since 1.1.0
+     */
+    default void notifyMessagePosted(final PostedMessage message) {
+        notifyMessagePosted(message.channelId());
+    }
 }
